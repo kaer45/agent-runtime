@@ -5,6 +5,7 @@ from collections import deque
 from events.models import EventType, RuntimeEvent
 from tools.runner import ToolRunner
 from tasks.models import Task, TaskState
+from tasks.dag import TaskDAG
 
 logger = logging.getLogger(__name__)
 
@@ -27,31 +28,16 @@ class TaskScheduler:
             
         return task
 
-    async def run(self, tasks: dict[str, Task], run_id: str):
-        """事件驱动调度器，异步生成 RuntimeEvent。"""
+    async def run(self, tasks: dict[str, Task],dag:TaskDAG, run_id: str):
+        """事件驱动调度器，异步生成 RuntimeEvent。
         
-        # 1. 建反向边 + indegree + 校验依赖存在
-        dependents: dict[str, list[str]] = {task_id: [] for task_id in tasks}
-        indegree: dict[str, int] = {}
-
-        try:
-            for task_id, task in tasks.items():
-                for dep in task.dependencies:
-                    if dep not in tasks:
-                        raise KeyError(f"Task '{task_id}' depends on unknown task '{dep}'")
-                    dependents[dep].append(task_id)
-                indegree[task_id] = len(task.dependencies)
-            
-            # 2. Kahn 检测环
-            self._detect_cycle(tasks, dependents, indegree)
-        except Exception as e:
-            logger.error("任务图校验失败: %s", e)
-            yield RuntimeEvent(type=EventType.RUN_STARTED, run_id=run_id)
-            yield RuntimeEvent(
-                type=EventType.RUN_FINISHED, run_id=run_id,
-                data={"error": str(e), "error_type": type(e).__name__},
-            )
-            return
+        注意：传入的 tasks 必须已经在 TaskPlan 中被校验为合法的 DAG。
+        """
+        
+        # 1. 建反向边和入度表 (因为已经校验过，这里直接建图即可)
+        dependents: dict[str, list[str]] = dag.dependents
+        indegree: dict[str, int] = dag.indegree
+        
 
         yield RuntimeEvent(type=EventType.RUN_STARTED, run_id=run_id)
 
@@ -87,7 +73,7 @@ class TaskScheduler:
             yield ev
         pending_events.clear()
 
-        # 3. 事件驱动执行
+        # 2. 事件驱动执行
         while running:
             done, _ = await asyncio.wait(running.keys(), return_when=asyncio.FIRST_COMPLETED)
 
@@ -119,7 +105,7 @@ class TaskScheduler:
                 yield ev
             pending_events.clear()
 
-        # 4. 失败原因传播
+        # 3. 失败原因传播
         self._propagate_blocked(tasks, dependents)
         for task in tasks.values():
             if task.state == TaskState.BLOCKED:
@@ -131,25 +117,8 @@ class TaskScheduler:
         yield RuntimeEvent(type=EventType.RUN_FINISHED, run_id=run_id)
 
     @staticmethod
-    def _detect_cycle(tasks, dependents, indegree) -> None:
-        tmp = dict(indegree)
-        q = deque(task_id for task_id, d in tmp.items() if d == 0)
-        visited = 0
-
-        while q:
-            tid = q.popleft()
-            visited += 1
-            for succ in dependents[tid]:
-                tmp[succ] -= 1
-                if tmp[succ] == 0:
-                    q.append(succ)
-
-        if visited < len(tasks):
-            cyclic = [tid for tid, d in tmp.items() if d > 0]
-            raise ValueError(f"Circular dependency detected among: {cyclic}")
-
-    @staticmethod
     def _propagate_blocked(tasks, dependents) -> None:
+        """多源 BFS 传播失败/阻塞状态。"""
         q = deque(tid for tid, t in tasks.items() if t.state in (TaskState.FAILED, TaskState.BLOCKED))
         seen = set(q)
 
