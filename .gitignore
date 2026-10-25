@@ -1,0 +1,21 @@
+# 环境变量与敏感信息
+.env
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 编辑器/系统文件
+.vscode/
+.idea/
+.DS_Store
+
+# 日志
+*.log

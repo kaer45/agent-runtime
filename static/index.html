@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>葡萄酒酿制 Agent</title>
+
+    <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+
+            margin: 0;
+
+            min-height: 100vh;
+
+            font-family:
+                -apple-system,
+                BlinkMacSystemFont,
+                "Segoe UI",
+                "Microsoft YaHei",
+                sans-serif;
+
+            background:
+                linear-gradient(
+                    135deg,
+                    #f5f7fb,
+                    #eef1f8
+                );
+
+            color: #1f2937;
+        }
+
+        .container {
+
+            width: min(
+                900px,
+                calc(100% - 32px)
+            );
+
+            margin: 40px auto;
+        }
+
+        /* ================================
+           Header
+           ================================= */
+
+        .header {
+
+            margin-bottom: 24px;
+        }
+
+        .title {
+
+            font-size: 30px;
+
+            font-weight: 700;
+
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+
+            color: #6b7280;
+
+            font-size: 14px;
+        }
+
+        /* ================================
+           Card
+           ================================= */
+
+        .card {
+
+            background: rgba(
+                255,
+                255,
+                255,
+                0.9
+            );
+
+            border: 1px solid #e5e7eb;
+
+            border-radius: 18px;
+
+            box-shadow:
+                0 10px 30px
+                rgba(
+                    0,
+                    0,
+                    0,
+                    0.06
+                );
+
+            overflow: hidden;
+
+            margin-bottom: 18px;
+        }
+
+        /* ================================
+           Input
+           ================================= */
+
+        .input-area {
+
+            padding: 20px;
+        }
+
+        textarea {
+
+            width: 100%;
+
+            min-height: 100px;
+
+            resize: vertical;
+
+            border: 1px solid #d1d5db;
+
+            border-radius: 12px;
+
+            padding: 14px;
+
+            font-size: 15px;
+
+            outline: none;
+
+            transition:
+                border-color .2s,
+                box-shadow .2s;
+        }
+
+        textarea:focus {
+
+            border-color: #6366f1;
+
+            box-shadow:
+                0 0 0 3px
+                rgba(
+                    99,
+                    102,
+                    241,
+                    0.12
+                );
+        }
+
+        .button-row {
+
+            display: flex;
+
+            justify-content: flex-end;
+
+            margin-top: 12px;
+        }
+
+        button {
+
+            border: none;
+
+            border-radius: 10px;
+
+            padding:
+                10px 20px;
+
+            font-size: 14px;
+
+            cursor: pointer;
+
+            background:
+                #4f46e5;
+
+            color: white;
+
+            transition:
+                transform .15s,
+                opacity .15s;
+        }
+
+        button:hover {
+
+            transform:
+                translateY(-1px);
+        }
+
+        button:disabled {
+
+            opacity: .5;
+
+            cursor: not-allowed;
+
+            transform: none;
+        }
+
+        /* ================================
+           Section
+           ================================= */
+
+        .section-header {
+
+            padding:
+                16px 20px;
+
+            border-bottom:
+                1px solid #eee;
+
+            font-size: 15px;
+
+            font-weight: 600;
+        }
+
+        .section-body {
+
+            padding: 20px;
+        }
+
+        /* ================================
+           Events
+           ================================= */
+
+        #events {
+
+            display: flex;
+
+            flex-direction: column;
+
+            gap: 10px;
+        }
+
+        .event {
+
+            display: flex;
+
+            gap: 12px;
+
+            padding: 12px;
+
+            border-radius: 12px;
+
+            background:
+                #f8fafc;
+
+            border:
+                1px solid #edf0f4;
+
+            animation:
+                fadeIn .25s ease;
+        }
+
+        @keyframes fadeIn {
+
+            from {
+
+                opacity: 0;
+
+                transform:
+                    translateY(5px);
+            }
+
+            to {
+
+                opacity: 1;
+
+                transform:
+                    translateY(0);
+            }
+        }
+
+        .event-icon {
+
+            width: 28px;
+
+            height: 28px;
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: center;
+
+            border-radius: 50%;
+
+            background:
+                #eef2ff;
+
+            flex-shrink: 0;
+        }
+
+        .event-content {
+
+            flex: 1;
+        }
+
+        .event-title {
+
+            font-size: 14px;
+
+            font-weight: 600;
+
+            margin-bottom: 4px;
+        }
+
+        .event-detail {
+
+            font-size: 13px;
+
+            color: #6b7280;
+
+            white-space: pre-wrap;
+
+            word-break: break-word;
+        }
+
+        /* ================================
+           Final Answer
+           ================================= */
+
+        #answer {
+
+            line-height: 1.8;
+
+            font-size: 15px;
+
+            white-space: pre-wrap;
+
+            min-height: 40px;
+        }
+
+        .empty {
+
+            color: #9ca3af;
+
+            font-size: 14px;
+        }
+
+        /* ================================
+           Status
+           ================================= */
+
+        .status {
+
+            display: inline-flex;
+
+            align-items: center;
+
+            gap: 7px;
+
+            font-size: 13px;
+
+            color: #6b7280;
+
+            margin-top: 10px;
+        }
+
+        .dot {
+
+            width: 8px;
+
+            height: 8px;
+
+            border-radius: 50%;
+
+            background:
+                #22c55e;
+        }
+
+        .dot.running {
+
+            background:
+                #f59e0b;
+
+            animation:
+                pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: .3;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        /* ================================
+           Mobile
+           ================================= */
+
+        @media (
+            max-width: 600px
+        ) {
+
+            .container {
+
+                width:
+                    calc(100% - 20px);
+
+                margin:
+                    20px auto;
+            }
+
+            .title {
+
+                font-size: 24px;
+            }
+
+            .card {
+
+                border-radius: 14px;
+            }
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+<div class="container">
+
+    <!-- ==================================
+         Header
+         ================================== -->
+
+    <div class="header">
+
+        <div class="title">
+            葡萄酒酿制 Agent
+        </div>
+
+        <div class="subtitle">
+            Tool Calling · Task State · DAG · Scheduler · SSE
+        </div>
+
+    </div>
+
+
+    <!-- ==================================
+         Input
+         ================================== -->
+
+    <div class="card">
+
+        <div class="input-area">
+
+            <textarea
+                id="input"
+                placeholder="请输入问题..."
+            ></textarea>
+
+            <div class="button-row">
+
+                <button
+                    id="sendBtn"
+                    onclick="sendMessage()"
+                >
+                    发送
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- ==================================
+         Runtime Events
+         ================================== -->
+
+    <div class="card">
+
+        <div class="section-header">
+
+            Agent 执行过程
+
+            <div
+                class="status"
+                id="status"
+            >
+
+                <span
+                    class="dot"
+                    id="statusDot"
+                ></span>
+
+                <span id="statusText">
+                    等待输入
+                </span>
+
+            </div>
+
+        </div>
+
+
+        <div class="section-body">
+
+            <div
+                id="events"
+            >
+
+                <div class="empty">
+                    Agent 执行过程将在这里实时显示
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- ==================================
+         Final Answer
+         ================================== -->
+
+    <div class="card">
+
+        <div class="section-header">
+
+            最终回答
+
+        </div>
+
+        <div class="section-body">
+
+            <div
+                id="answer"
+                class="empty"
+            >
+                等待 Agent 完成……
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+    const input =
+        document.getElementById(
+            "input"
+        );
+
+    const sendBtn =
+        document.getElementById(
+            "sendBtn"
+        );
+
+    const events =
+        document.getElementById(
+            "events"
+        );
+
+    const answer =
+        document.getElementById(
+            "answer"
+        );
+
+    const statusText =
+        document.getElementById(
+            "statusText"
+        );
+
+    const statusDot =
+        document.getElementById(
+            "statusDot"
+        );
+
+
+    // ======================================================
+    // 添加 Event
+    // ======================================================
+
+    function addEvent(
+        icon,
+        title,
+        detail = ""
+    ) {
+
+        // 第一次添加时删除 placeholder
+
+        if (
+            events.querySelector(
+                ".empty"
+            )
+        ) {
+
+            events.innerHTML = "";
+        }
+
+
+        const div =
+            document.createElement(
+                "div"
+            );
+
+        div.className =
+            "event";
+
+
+        div.innerHTML = `
+
+            <div class="event-icon">
+                ${icon}
+            </div>
+
+            <div class="event-content">
+
+                <div class="event-title">
+                    ${escapeHtml(title)}
+                </div>
+
+                ${
+                    detail
+                    ?
+                    `<div class="event-detail">
+                        ${escapeHtml(detail)}
+                    </div>`
+                    :
+                    ""
+                }
+
+            </div>
+        `;
+
+
+        events.appendChild(
+            div
+        );
+
+
+        // 自动滚动到底部
+
+        div.scrollIntoView({
+
+            behavior:
+                "smooth",
+
+            block:
+                "nearest"
+        });
+    }
+
+
+    // ======================================================
+    // HTML Escape
+    // ======================================================
+
+    function escapeHtml(
+        value
+    ) {
+
+        if (
+            value === null
+            ||
+            value === undefined
+        ) {
+
+            return "";
+        }
+
+        return String(value)
+
+            .replace(
+                /&/g,
+                "&amp;"
+            )
+
+            .replace(
+                /</g,
+                "&lt;"
+            )
+
+            .replace(
+                />/g,
+                "&gt;"
+            )
+
+            .replace(
+                /"/g,
+                "&quot;"
+            )
+
+            .replace(
+                /'/g,
+                "&#039;"
+            );
+    }
+
+
+    // ======================================================
+    // Send
+    // ======================================================
+
+    function sendMessage() {
+
+        const message =
+            input.value.trim();
+
+
+        if (!message) {
+
+            return;
+        }
+
+
+        // 清空旧结果
+
+        events.innerHTML = "";
+
+        answer.innerText =
+            "Agent 正在运行……";
+
+        answer.className = "";
+
+
+        sendBtn.disabled =
+            true;
+
+
+        input.disabled =
+            true;
+
+
+        statusText.innerText =
+            "正在执行";
+
+        statusDot.classList.add(
+            "running"
+        );
+
+
+        // ==================================================
+        // SSE
+        // ==================================================
+
+        const url =
+            "/chat?message="
+            +
+            encodeURIComponent(
+                message
+            );
+
+
+        const source =
+            new EventSource(
+                url
+            );
+
+
+        // ==================================================
+        // Message
+        // ==================================================
+
+        source.onmessage =
+            function(event) {
+
+                try {
+
+                    const data =
+                        JSON.parse(
+                            event.data
+                        );
+
+
+                    handleEvent(
+                        data
+                    );
+
+                }
+                catch (error) {
+
+                    console.error(
+                        error
+                    );
+                }
+
+            };
+
+
+        // ==================================================
+        // Error
+        // ==================================================
+
+        source.onerror =
+            function(error) {
+
+                console.error(
+                    "SSE error:",
+                    error
+                );
+
+                source.close();
+
+                sendBtn.disabled =
+                    false;
+
+                input.disabled =
+                    false;
+
+                statusText.innerText =
+                    "连接结束";
+
+                statusDot.classList.remove(
+                    "running"
+                );
+            };
+    }
+
+
+    // ======================================================
+    // Handle Runtime Event
+    // ======================================================
+
+    function handleEvent(
+        event
+    ) {
+
+        const type =
+            event.type;
+
+        const data =
+            event.data || {};
+
+
+        // ==================================================
+        // Run Started
+        // ==================================================
+
+        if (
+            type ===
+            "run_started"
+        ) {
+
+            addEvent(
+
+                "🚀",
+
+                "Agent Runtime 启动",
+
+                "Run ID: "
+                + event.run_id
+            );
+
+            return;
+        }
+
+
+        // ==================================================
+        // Model Started
+        // ==================================================
+
+        if (
+            type ===
+            "model_started"
+        ) {
+
+            addEvent(
+
+                "🧠",
+
+                "Model 正在分析",
+
+                data.message
+                ||
+                "正在分析用户请求"
+            );
+
+            return;
+        }
+
+
+        // ==================================================
+        // Model Finished
+        // ==================================================
+
+        if (
+            type ===
+            "model_finished"
+        ) {
+
+            const count =
+                data.tool_call_count
+                || 0;
+
+
+            addEvent(
+
+                "🤖",
+
+                "Model 分析完成",
+
+                count
+                ?
+                `产生 ${count} 个 Tool Call`
+                :
+                "没有产生 Tool Call"
+            );
+
+            return;
+        }
+
+
+        // ==================================================
+        // Task Started
+        // ==================================================
+
+        if (
+            type ===
+            "task_started"
+        ) {
+
+            const tool =
+                data.tool_name
+                || "unknown";
+
+
+            const dependencies =
+                data.depends_on
+                || [];
+
+
+            let detail =
+                "开始执行";
+
+
+            if (
+                dependencies.length
+            ) {
+
+                detail +=
+                    "\n依赖："
+                    +
+                    dependencies.join(
+                        ", "
+                    );
+            }
+
+
+            addEvent(
+
+                "▶️",
+
+                tool,
+
+                detail
+            );
+
+            return;
+        }
+
+
+        // ==================================================
+        // Tool Started
+        // ==================================================
+
+        if (
+            type ===
+            "tool_started"
+        ) {
+
+            const tool =
+                data.tool_name
+                || "Tool";
+
+
+            addEvent(
+
+                "🔧",
+
+                `${tool} 正在执行`,
+
+                JSON.stringify(
+                    data.arguments,
+                    null,
+                    2
+                )
+            );
+
+            return;
+        }
+
+
+        // ==================================================
+        // Tool Success
+        // ==================================================
+
+        if (
+            type ===
+            "tool_success"
+        ) {
+
+            addEvent(
+
+                "✅",
+
+                `${data.tool_name} 执行成功`,
+
+                String(
+                    data.result
+                )
+            );
+
+            return;
+        }
+
+
+        // ==================================================
+        // Tool Failed
+        // ==================================================
+
+        if (
+            type ===
+            "tool_failed"
+        ) {
+
+            addEvent(
+
+                "❌",
+
+                `${data.tool_name} 执行失败`,
+
+                String(
+                    data.error
+                )
+            );
+
+            return;
+        }
+
+
+        // ==================================================
+        // Task Success
+        // ==================================================
+
+        if (
+            type ===
+            "task_success"
+        ) {
+
+            addEvent(
+
+                "✓",
+
+                `${data.tool_name} Task SUCCESS`,
+
+                String(
+                    data.result
+                )
+            );
+
+            return;
+        }
+
+
+        // ==================================================
+        // Task Failed
+        // ==================================================
+
+        if (
+            type ===
+            "task_failed"
+        ) {
+
+            addEvent(
+
+                "❌",
+
+                `${data.tool_name || "Task"} FAILED`,
+
+                String(
+                    data.error
+                )
+            );
+
+            return;
+        }
+
+
+        // ==================================================
+        // Task Blocked
+        // ==================================================
+
+        if (
+            type ===
+            "task_blocked"
+        ) {
+
+            addEvent(
+
+                "⛔",
+
+                `${data.tool_name || "Task"} BLOCKED`,
+
+                data.reason
+            );
+
+            return;
+        }
+
+
+        // ==================================================
+        // Final Answer
+        // ==================================================
+
+        if (
+            type ===
+            "final_answer"
+        ) {
+
+            answer.innerText =
+                data.content
+                || "";
+
+
+            answer.className =
+                "";
+
+
+            statusText.innerText =
+                "执行完成";
+
+
+            statusDot.classList.remove(
+                "running"
+            );
+
+
+            sendBtn.disabled =
+                false;
+
+            input.disabled =
+                false;
+
+
+            return;
+        }
+
+
+        // ==================================================
+        // Run Finished
+        // ==================================================
+
+        if (
+            type ===
+            "run_finished"
+        ) {
+
+            statusText.innerText =
+                "执行完成";
+
+
+            statusDot.classList.remove(
+                "running"
+            );
+
+
+            return;
+        }
+
+
+        // ==================================================
+        // Runtime Error
+        // ==================================================
+
+        if (
+            type ===
+            "runtime_error"
+        ) {
+
+            addEvent(
+
+                "💥",
+
+                "Runtime Error",
+
+                data.error
+            );
+
+
+            answer.innerText =
+                "Runtime 执行发生错误：\n"
+                +
+                data.error;
+
+
+            answer.className =
+                "";
+
+
+            statusText.innerText =
+                "执行失败";
+
+
+            statusDot.classList.remove(
+                "running"
+            );
+
+
+            sendBtn.disabled =
+                false;
+
+            input.disabled =
+                false;
+        }
+
+    }
+
+
+    // ======================================================
+    // Ctrl + Enter
+    // ======================================================
+
+    input.addEventListener(
+
+        "keydown",
+
+        function(event) {
+
+            if (
+                event.ctrlKey
+                &&
+                event.key === "Enter"
+            ) {
+
+                sendMessage();
+            }
+
+        }
+    );
+
+</script>
+
+</body>
+
+</html>
