@@ -7,6 +7,7 @@ from tools.registry import ToolRegistry
 from tools.runner import ToolRunner
 from tasks.scheduler import TaskScheduler
 from tasks.models import Task, TaskState
+from tasks.plan import TaskPlan, PlannedTask
 from events.models import EventType, RuntimeEvent
 
 logger = logging.getLogger(__name__)
@@ -48,7 +49,6 @@ class ModelToolLoop:
                 data={"tool_call_count": len(response.tool_calls or [])}
             )
             
-            # 调试模型输出
             logger.debug("reasoning: %r", response.reasoning_content)
             logger.debug("content: %r", response.content)
 
@@ -60,11 +60,10 @@ class ModelToolLoop:
                 )
                 return
 
-            # 把带 tool_calls 的 assistant 消息放回上下文
             messages.append(response.model_dump())
 
-            # 解析 tool_calls 构建任务图
-            tasks: dict[str, Task] = {}
+            # 1. 构建 TaskPlan 数据
+            tasks_data = []
             for index, tool_call in enumerate(response.tool_calls):
                 task_id = f"T{index+1}"
                 try:
@@ -73,15 +72,40 @@ class ModelToolLoop:
                     logger.warning("参数解析失败，默认置为空: %s", e)
                     arguments = {}
 
-                tasks[task_id] = Task(
-                    task_id=task_id,
-                    tool_name=tool_call.function.name,
-                    arguments=arguments
+                tasks_data.append({
+                    "id": task_id,
+                    "tool": tool_call.function.name,
+                    "arguments": arguments,
+                    "dependencies": []  # 未来可从 arguments 中解析 {"from_task": ...}
+                })
+
+            # 2. 进行强校验并生成 DAG
+            try:
+                # 这里生成任务计划时，会进行许多校验，同时生成TaskDAG
+                plan = TaskPlan(tasks=tasks_data)
+                dag = plan.get_dag() 
+            except Exception as e:
+                logger.error("任务图生成失败: %s", e)
+                yield RuntimeEvent(
+                    type=EventType.RUN_FINISHED,
+                    run_id=run_id,
+                    data={"error": f"任务图不合法: {e}", "error_type": type(e).__name__},
+                )
+                return
+            
+            # 3. 转换为真正的 Task 实例
+            tasks: dict[str, Task] = {}
+            for planned_task in plan.tasks:
+                tasks[planned_task.id] = Task(
+                    task_id=planned_task.id,
+                    tool_name=planned_task.tool,
+                    arguments=planned_task.arguments,
+                    dependencies=planned_task.dependencies
                 )
 
-            # 交给 DAG 调度器并转发事件
+            # 4. 交给 DAG 调度器执行并转发事件
             try:
-                async for event in self.scheduler.run(tasks, run_id):
+                async for event in self.scheduler.run(tasks, dag, run_id):
                     yield event
             except Exception as e:
                 logger.exception("调度异常")
@@ -91,7 +115,7 @@ class ModelToolLoop:
                     data={"error": str(e), "error_type": type(e).__name__},
                 )
 
-            # 收集任务结果并作为 tool 消息回填
+            # 5. 收集任务结果并作为 tool 消息回填
             for index, tool_call in enumerate(response.tool_calls):
                 task_id = f"T{index+1}"
                 task = tasks[task_id]
