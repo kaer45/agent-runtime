@@ -1,0 +1,27 @@
+{
+    "tasks":[
+        {
+            "id": "T1",
+            "tool": "get_weather",
+            "arguments": {
+                "city": "成都"
+            },
+            "dependencies": []
+        },
+        {
+            "id": "T2",
+            "tool": "get_current_time",
+            "arguments": {},
+            "dependencies": []
+        },
+        {
+            "id": "T3",
+            "tool": "brewing",
+            "arguments": {
+                "weather": {"from_task": "T1"},
+                "current_time": {"from_task": "T2"}
+            },
+            "dependencies": ["T1","T2"]
+        }
+    ]
+}
