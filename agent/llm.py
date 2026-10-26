@@ -16,13 +16,29 @@ class LLM:
         self.model = os.getenv("LLM_MODEL_ID") or model
         logger.info("LLM客户端初始化成功，当前模型: %s", self.model)
 
-    async def chat(self, messages: list[dict], tools: list[dict] | None = None):
+    async def chat(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        tool_choice: str | dict | None = None,
+        thinking: bool | None = None,
+    ):
         """执行一次非流式对话请求并返回消息体。"""
         logger.debug("请求LLM: 消息数=%d, 工具数=%d", len(messages), len(tools or []))
-        
+
+        kwargs: dict = {}
+        if tools is not None:
+            kwargs["tools"] = tools
+        if tool_choice is not None:
+            kwargs["tool_choice"] = tool_choice
+        if thinking is not None:
+            kwargs["extra_body"] = {
+                "thinking": {"type": "enabled" if thinking else "disabled"}
+            }
+
         response = await self.client.chat.completions.create(
             model=self.model,
             messages=messages,
-            tools=tools,
+            **kwargs,
         )
         return response.choices[0].message
