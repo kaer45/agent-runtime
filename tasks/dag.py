@@ -44,4 +44,4 @@ class TaskDAG:
 
         if len(self.topo_order) < len(self.tasks):
             cyclic_nodes = [tid for tid, d in tmp_indegree.items() if d > 0]
-            raise ValueError(f"任务图存在循环依赖，涉及节点: {cyclic_nodes}")
+            raise ValueError(f"任务图存在循环依赖，涉及任务: {cyclic_nodes}")

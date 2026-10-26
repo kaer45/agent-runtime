@@ -8,6 +8,7 @@ from tools.runner import ToolRunner
 from tasks.scheduler import TaskScheduler
 from tasks.models import Task, TaskState
 from tasks.plan import TaskPlan, PlannedTask
+from tasks.converter import TaskConverter
 from events.models import EventType, RuntimeEvent
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,13 @@ class ModelToolLoop:
                 # 这里生成任务计划时，会进行许多校验，同时生成TaskDAG
                 plan = TaskPlan(tasks=tasks_data)
                 dag = plan.get_dag() 
+
+                # 校验工具是否都已注册
+                TaskConverter.validate_tools(plan, self.tool_registry)
+
+                # 转换为运行时 Task 实例
+                tasks = TaskConverter.convert(plan)
+
             except Exception as e:
                 logger.error("任务图生成失败: %s", e)
                 yield RuntimeEvent(
@@ -93,17 +101,8 @@ class ModelToolLoop:
                 )
                 return
             
-            # 3. 转换为真正的 Task 实例
-            tasks: dict[str, Task] = {}
-            for planned_task in plan.tasks:
-                tasks[planned_task.id] = Task(
-                    task_id=planned_task.id,
-                    tool_name=planned_task.tool,
-                    arguments=planned_task.arguments,
-                    dependencies=planned_task.dependencies
-                )
 
-            # 4. 交给 DAG 调度器执行并转发事件
+            # 3. 交给 DAG 调度器执行并转发事件
             try:
                 async for event in self.scheduler.run(tasks, dag, run_id):
                     yield event
