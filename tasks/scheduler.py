@@ -36,7 +36,7 @@ class TaskScheduler:
         
         # 1. 建反向边和入度表 (因为已经校验过，这里直接建图即可)
         dependents: dict[str, list[str]] = dag.dependents
-        indegree: dict[str, int] = dag.indegree
+        indegree: dict[str, int] = dag.indegree.copy()
         
 
         yield RuntimeEvent(type=EventType.RUN_STARTED, run_id=run_id)
