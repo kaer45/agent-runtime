@@ -582,18 +582,18 @@ if __name__ == "__main__":
 
 ## 8. 验收清单（DoD）
 
-- [ ] `agent/llm.py` 的 `chat()` 支持 `tool_choice`，且不传 `None`
-- [ ] `agent/planner.py` 能独立生成 `TaskPlan`，不依赖 scheduler / runner
-- [ ] `submit_task_plan` 的 Schema 手写，没有 `$ref`
-- [ ] 强制 `tool_choice` 生效（测试断言）
-- [ ] 三类错误都能触发修复：JSON 非法、依赖缺失、工具未注册
-- [ ] 修复上限生效，超过抛 `PlanGenerationError`
-- [ ] 模型不调用工具时，能从 `content` 降级解析
-- [ ] `pytest tests/unit/test_lesson05_planner.py -q` → 8 passed
-- [ ] 全量 `pytest -q` → 21 passed（13 + 8）
-- [ ] 真实冒烟得到 `T1/T2/T3`，`T3.dependencies == ["T1", "T2"]`
-- [ ] `git diff --stat` 只包含本课预期的文件
-- [ ] 没有改动 `model_tool_loop.py` / `scheduler.py`（第 6 课才动）
+- [x] `agent/llm.py` 的 `chat()` 支持 `tool_choice`，且不传 `None`
+- [x] `agent/planner.py` 能独立生成 `TaskPlan`，不依赖 scheduler / runner
+- [x] `submit_task_plan` 的 Schema 手写，没有 `$ref`
+- [x] 强制 `tool_choice` 生效（测试断言）
+- [x] 三类错误都能触发修复：JSON 非法、依赖缺失、工具未注册
+- [x] 修复上限生效，超过抛 `PlanGenerationError`
+- [x] 模型不调用工具时，能从 `content` 降级解析
+- [x] `pytest tests/unit/test_lesson05_planner.py -q` → 8 passed
+- [x] 全量 `pytest -q` → 21 passed（13 + 8）
+- [x] 真实冒烟得到 `T1/T2/T3`，`T3.dependencies == ["T1", "T2"]`
+- [x] `git diff --stat` 只包含本课预期的文件
+- [x] 没有改动 `model_tool_loop.py` / `scheduler.py`（第 6 课才动）
 
 ---
 
