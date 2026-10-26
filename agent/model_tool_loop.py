@@ -77,7 +77,7 @@ class ModelToolLoop:
                     "id": task_id,
                     "tool": tool_call.function.name,
                     "arguments": arguments,
-                    "dependencies": []  # 未来可从 arguments 中解析 {"from_task": ...}
+                    "dependencies": []
                 })
 
             # 2. 进行强校验并生成 DAG
