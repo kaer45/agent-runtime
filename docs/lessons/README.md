@@ -28,12 +28,13 @@
 
 ## 2. 起点与目标形态
 
-**当前起点（第 4 课结束）**
+**当前起点（第 8 课结束）**
 
 - 已有：`ToolRegistry` / `ToolRunner` / 事件模型 / `TaskPlan` / `TaskDAG` / `TaskConverter` / `TaskScheduler`
-- 已有：`model_tool_loop` 能把 tool_calls 变成任务并调度（但 `dependencies` 硬编码为空）
-- 测试：13 个用例通过
-- 缺口：模型还不能按协议表达计划；上下文、状态、可靠性、工具生态、可观测全部未开始
+- 已有：`TaskPlanner` / `PlanRunner` / `IntentRouter` / `ChatResponder`，能分流聊天与任务
+- 已有：`ToolCatalog`，Planner / Router 共用同一份工具能力目录
+- 测试：78 个用例通过
+- 缺口：参数级校验、上下文、状态、可靠性、工具生态、可观测未开始
 
 **第 36 课目标形态**
 
@@ -94,7 +95,7 @@
 | 5 | 让模型按协议生成计划 | `TaskPlanner` + `submit_task_plan` + 校验修复 | ✅ |
 | 6 | 接入 Agent Runtime | 替换 `dependencies: []` 硬编码，接 `TaskPlanExecutor` | ✅ |
 | 7 | 区分普通对话与任务规划 | `IntentRouter`：闲聊直达 / 任务进规划 | ✅ |
-| 8 | 理解工具真实能力 | `ToolCatalog`：从 Schema/docstring 生成能力摘要 | ⬜ |
+| 8 | 理解工具真实能力 | `ToolCatalog`：从 Schema/docstring 生成能力摘要 | ✅ |
 | 9 | 严格工具参数校验 | JSON Schema 校验 + 错误回填 | ⬜ |
 | 10 | 上下文预算管理 | `TokenBudget`：计数、裁剪、优先级 | ⬜ |
 | 11 | 对话历史摘要 | 滚动摘要，保留关键事实 | ⬜ |
@@ -253,6 +254,7 @@ agent-runtime/
 │   └── history.py                 # 第 20 课
 ├── tools/
 │   ├── registry.py
+│   ├── catalog.py                 # 第 8 课
 │   ├── runner.py
 │   ├── builtin.py
 │   ├── base.py                    # 第 26 课
@@ -359,5 +361,5 @@ agent-runtime/
 
 ## 10. 下一步
 
-- 先完成 `lesson5.md`（模型生成计划），跑通测试后再进入第 6 课。
+- 第 8 课已完成：`ToolCatalog` 已接入 Planner / Router；下一步进入第 9 课（JSON Schema 参数校验）。
 - 如果需要，我可以补写 `lesson1.md` ~ `lesson4.md` 作为复习与验收文档（代码已完成，主要用于巩固和查漏）。
