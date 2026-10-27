@@ -5,6 +5,7 @@ from typing import Any
 
 class EventType(str, Enum):
     """事件类型枚举，用于前端或日志区分当前处于什么阶段。"""
+    INTENT_DETECTED = "intent_detected"
     RUN_STARTED = "run_started"
     RUN_FINISHED = "run_finished"
 

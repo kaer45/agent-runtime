@@ -841,7 +841,28 @@
         const data =
             event.data || {};
 
+        // ==================================================
+        // Intent Detected
+        // ==================================================
+        if (type === "intent_detected") {
+            const intentLabel = data.intent === "task" ? "任务规划" : "普通对话";
+            const sourceLabel = {
+                rule: "规则",
+                llm: "模型",
+                fallback: "回退",
+            }[data.source] || data.source || "未知";
 
+            let detail = `来源：${sourceLabel}`;
+            if (data.rule) {
+                detail += `（${data.rule}）`;
+            }
+            if (data.reason) {
+                detail += `\n理由：${data.reason}`;
+            }
+
+            addEvent("🧭", `路由：${intentLabel}`, detail);
+            return;
+        }
         // ==================================================
         // Run Started
         // ==================================================
