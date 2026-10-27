@@ -9,6 +9,7 @@ from agent.planner import TaskPlanner
 from tasks.plan_executor import TaskPlanExecutor
 from tasks.scheduler import TaskScheduler
 from tools.builtin import brewing, get_current_time, get_weather
+from tools.catalog import ToolCatalog
 from tools.registry import ToolRegistry
 from tools.runner import ToolRunner
 from events.models import EventType, RuntimeEvent
@@ -43,10 +44,16 @@ class AgentRuntime:
         tool_runner = ToolRunner(registry=registry)
         scheduler = TaskScheduler(tool_runner=tool_runner)
         executor = TaskPlanExecutor(scheduler=scheduler, registry=registry)
-        planner = TaskPlanner(llm=self.llm, registry=registry)
+
+        # 工具目录只构建一次，Planner 和 Router 共用同一份快照。
+        catalog = ToolCatalog.from_registry(registry)
+        self.catalog = catalog
+        logger.info("工具目录指纹: %s", catalog.fingerprint())
+
+        planner = TaskPlanner(llm=self.llm, registry=registry, catalog=catalog)
 
         # 4. 意图路由器
-        self.router = IntentRouter(llm=self.llm, registry=registry)
+        self.router = IntentRouter(llm=self.llm, registry=registry, catalog=catalog)
 
         # 5. 任务执行器 PlanRunner
         self.task_runner = PlanRunner(

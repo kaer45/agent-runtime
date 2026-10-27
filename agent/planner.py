@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from tasks.converter import TaskConverter
 from tasks.plan import TaskPlan
 from tools.registry import ToolRegistry
+from tools.catalog import ToolCatalog
 
 if TYPE_CHECKING:
     from agent.llm import LLM
@@ -96,13 +97,22 @@ class TaskPlanner:
         plan = await planner.plan("今天波尔多适合酿酒吗？")
     """
 
-    def __init__(self, llm: "LLM", registry: ToolRegistry, max_repairs: int = 2):
+    def __init__(
+        self,
+        llm: "LLM",
+        registry: ToolRegistry,
+        max_repairs: int = 2,
+        *,
+        catalog: ToolCatalog | None = None,
+    ):
         """初始化规划器。
 
         Args:
             llm: 提供 async chat(...) 的对象；测试时可注入假模型。
             registry: 工具注册表，提供工具名与参数 Schema。
             max_repairs: 校验失败后的最大重试次数（不含首次）。
+            catalog: 可选的共享工具目录；不传则从 registry 构建。
+                共享同一实例可以保证 Planner 和 Router 看到完全一致的快照。
 
         Raises:
             ValueError: max_repairs 为负数时。
@@ -112,6 +122,11 @@ class TaskPlanner:
         self.llm = llm
         self.registry = registry
         self.max_repairs = max_repairs
+        self.catalog = (
+            catalog
+            if catalog is not None
+            else ToolCatalog.from_registry(registry)
+        )
 
     def build_messages(self, user_input: str) -> list[dict]:
         """构造初始消息：system 提示 + user 请求。"""
@@ -120,34 +135,12 @@ class TaskPlanner:
             {"role": "user", "content": user_input},
         ]
 
-    def _format_tool(self, name: str) -> str:
-        """把工具渲染成一行「名字(参数: 类型): 描述」。"""
-        fn = self.registry.get_tool_schema(name)["function"]
-        parameters = fn.get("parameters") or {}
-        properties = parameters.get("properties") or {}
-        required = set(parameters.get("required") or [])
-
-        args = []
-        for pname, spec in properties.items():
-            ptype = spec.get("type", "any")
-            if isinstance(ptype, list):
-                ptype = "|".join(str(t) for t in ptype)
-            optional = "?" if pname not in required else ""
-            args.append(f"{pname}: {ptype}{optional}")
-
-        signature = ", ".join(args)
-        description = fn.get("description", "")
-        return f"- {name}({signature}): {description}"
-
     def _system_prompt(self) -> str:
         """拼接 system prompt：固定规则 + 动态工具目录。"""
-        catalog = "\n".join(
-            self._format_tool(name) for name in self.registry.list_tools()
-        )
         return (
             PROTOCOL_RULES
-            + "\n可用工具（参数格式：名字: 类型，? 表示可选）：\n"
-            + catalog
+            + "\n可用工具（由注册表自动生成；参数格式：名字: 类型，必填/可选）：\n"
+            + self.catalog.render()
         )
 
     async def plan(self, user_input: str) -> TaskPlan:

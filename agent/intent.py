@@ -10,6 +10,7 @@ from typing import Any
 from dataclasses import dataclass
 
 from tools.registry import ToolRegistry
+from tools.catalog import ToolCatalog
 from agent.llm import LLM
 from agent.chat_rules import match_chat_rule
 
@@ -86,23 +87,36 @@ class RouteDecision:
 class IntentRouter:
     """先经过正则化过滤 chat，不通过用一次轻量 LLM 调用判断 chat/task。"""
 
-    def __init__(self,llm:LLM,registry:ToolRegistry):
+    def __init__(
+        self,
+        llm: LLM,
+        registry: ToolRegistry,
+        *,
+        catalog: ToolCatalog | None = None,
+    ):
         """初始化路由器。
 
         Args:
             llm: 只需要 async chat(...) 方法；测试时可注入假模型。
             registry: 提供工具名与描述，帮助判断是否需要工具。
+            catalog: 可选的共享工具目录；不传则从 registry 构建。
         """
         self.llm=llm
         self.registry=registry
+        self.catalog = (
+            catalog
+            if catalog is not None
+            else ToolCatalog.from_registry(registry)
+        )
 
     def _system_prompt(self)->str:
         """拼接分类提示词和工具清单。"""
-        tools=[]
-        for name in self.registry.list_tools():
-            fn=self.registry.get_tool_schema(name)["function"]
-            tools.append(f"- {name}: {fn['description']}")
-        return INTENT_PROMPT+"\n".join(tools)+"\n\n"+INTENT_RULES
+        return (
+            INTENT_PROMPT
+            + self.catalog.render_compact()
+            + "\n\n"
+            + INTENT_RULES
+        )
 
     async def decide(self,user_input:str)->RouteDecision:
         """先调用正则过滤 chat，不通过调用一次轻量 LLM 判断 chat/task"""
