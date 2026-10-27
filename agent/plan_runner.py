@@ -60,6 +60,7 @@ class PlanRunner:
         try:
             plan = await self.planner.plan(user_input)
         except PlanGenerationError as exc:
+            logger.warning("规划失败: %s", exc)
             yield RuntimeEvent(
                 type=EventType.PLAN_FAILED,
                 run_id=run_id,
@@ -106,6 +107,10 @@ class PlanRunner:
             )
             return
 
+        succeeded = sum(1 for r in results.values() if r.get("success"))
+        failed = len(results) - succeeded
+        logger.info("任务执行结束: 成功=%d, 失败=%d", succeeded, failed)
+
         try:
             content = await self._compose_answer(user_input, results)
         except Exception as exc:
@@ -122,6 +127,7 @@ class PlanRunner:
             run_id=run_id,
             data={"content": content},
         )
+        logger.info("最终回答生成完成")
         yield RuntimeEvent(type=EventType.RUN_FINISHED, run_id=run_id)
 
     @staticmethod
