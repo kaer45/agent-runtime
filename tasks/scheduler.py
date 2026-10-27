@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from collections import deque
 
 from events.models import EventType, RuntimeEvent
@@ -17,15 +18,25 @@ class TaskScheduler:
     async def _execute_task(self, task: Task) -> Task:
         """执行任务，并更新其状态。"""
         task.mark_running()
-        
+        started = time.perf_counter()
+
         # 调用纯粹的底层执行器
         result = await self.tool_runner.run(task.tool_name, task.arguments)
-        
+        elapsed = time.perf_counter() - started
+
         if result["success"]:
             task.mark_success(result["result"])
+            logger.info(
+                "任务完成 %s (工具: %s) 耗时 %.2fs",
+                task.task_id, task.tool_name, elapsed,
+            )
         else:
             task.mark_failed(result["error"])
-            
+            logger.warning(
+                "任务失败 %s (工具: %s) 耗时 %.2fs: %s",
+                task.task_id, task.tool_name, elapsed, result["error"],
+            )
+
         return task
 
     async def run(self, tasks: dict[str, Task],dag:TaskDAG, run_id: str):
@@ -51,6 +62,7 @@ class TaskScheduler:
                 task.resolve_arguments(tasks)
             except Exception as e:
                 task.mark_failed(f"Argument resolution failed: {e}")
+                logger.warning("任务参数解析失败 %s: %s", task_id, e)
                 pending_events.append(RuntimeEvent(
                     type=EventType.TASK_BLOCKED, run_id=run_id, task_id=task_id,
                     data={"tool_name": task.tool_name, "reason": str(task.error)}
@@ -109,6 +121,7 @@ class TaskScheduler:
         self._propagate_blocked(tasks, dependents)
         for task in tasks.values():
             if task.state == TaskState.BLOCKED:
+                logger.warning("任务阻塞 %s (工具: %s): %s", task.task_id, task.tool_name, task.error)
                 yield RuntimeEvent(
                     type=EventType.TASK_BLOCKED, run_id=run_id, task_id=task.task_id,
                     data={"tool_name": task.tool_name, "reason": task.error}

@@ -1,7 +1,10 @@
 import asyncio
 import sys
 
+from logging_config import setup_logging
 from agent.runtime import AgentRuntime
+
+setup_logging()
 
 
 async def main() -> None:

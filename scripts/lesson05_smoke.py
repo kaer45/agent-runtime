@@ -1,10 +1,13 @@
 import asyncio
 import sys
 
+from logging_config import setup_logging
 from agent.llm import LLM
 from agent.planner import TaskPlanner
 from tools.builtin import brewing, get_current_time, get_weather
 from tools.registry import ToolRegistry
+
+setup_logging()
 
 
 async def main() -> None:

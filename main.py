@@ -1,12 +1,10 @@
 import uvicorn
-import logging
+
+from logging_config import setup_logging
 
 if __name__ == "__main__":
-    # 配置全局日志
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-    )
+    # 配置全局日志（uvicorn reload 的子进程由 api/server.py 再配置一次）
+    setup_logging()
     
     # 启动 FastAPI
     uvicorn.run(

@@ -9,9 +9,14 @@ from agent.runtime import AgentRuntime
 
 from pathlib import Path
 
+from logging_config import setup_logging
+
 BASE_DIR = Path(__file__).resolve().parent.parent  # 拿到 agent-runtime 根目录
 
 logger = logging.getLogger(__name__)
+
+# uvicorn reload 的子进程不会执行 main.py，这里再配置一次日志
+setup_logging()
 
 # 1. 应用与中间件配置
 app = FastAPI(
