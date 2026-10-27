@@ -918,7 +918,43 @@
 
             return;
         }
+        
+        // ==================================================
+        // Plan Started
+        // ==================================================
+        if (type === "plan_started") {
+            addEvent("🧭", "正在规划任务", data.message || "");
+            return;
+        }
 
+        // ==================================================
+        // Plan Ready
+        // ==================================================
+        if (type === "plan_ready") {
+            const count = data.task_count || 0;
+            const lines = (data.tasks || []).map(
+                t => `${t.id} ${t.tool}` +
+                    (t.dependencies && t.dependencies.length
+                        ? " ← " + t.dependencies.join(", ")
+                        : "")
+            );
+            addEvent("🗺️", `计划已生成（${count} 个任务）`, lines.join("\n"));
+            return;
+        }
+
+        // ==================================================
+        // Plan Failed
+        // ==================================================
+        if (type === "plan_failed") {
+            addEvent("⚠️", "规划失败", data.error);
+            answer.innerText = "规划失败：\n" + (data.error || "");
+            answer.className = "";
+            statusText.innerText = "规划失败";
+            statusDot.classList.remove("running");
+            sendBtn.disabled = false;
+            input.disabled = false;
+            return;
+        }
 
         // ==================================================
         // Task Started
@@ -1160,20 +1196,15 @@
         // Run Finished
         // ==================================================
 
-        if (
-            type ===
-            "run_finished"
-        ) {
-
-            statusText.innerText =
-                "执行完成";
-
-
-            statusDot.classList.remove(
-                "running"
-            );
-
-
+        if (type === "run_finished") {
+            if (data.error) {
+                statusText.innerText = "执行失败";
+                sendBtn.disabled = false;
+                input.disabled = false;
+            } else {
+                statusText.innerText = "执行完成";
+            }
+            statusDot.classList.remove("running");
             return;
         }
 

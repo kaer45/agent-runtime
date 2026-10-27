@@ -7,6 +7,10 @@ class EventType(str, Enum):
     """事件类型枚举，用于前端或日志区分当前处于什么阶段。"""
     RUN_STARTED = "run_started"
     RUN_FINISHED = "run_finished"
+
+    PLAN_STARTED = "plan_started"
+    PLAN_READY = "plan_ready"
+    PLAN_FAILED = "plan_failed"
     
     MODEL_STARTED = "model_started"
     MODEL_FINISHED = "model_finished"
