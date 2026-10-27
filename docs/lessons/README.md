@@ -91,8 +91,8 @@
 | 2 | 设计统一任务计划协议 | `TaskPlan` / `PlannedTask` 数据模型 | ✅ |
 | 3 | 从任务计划构建 DAG | `TaskDAG`：Kahn 拓扑排序 + 环检测 | ✅ |
 | 4 | 计划转 Task 并接入调度器 | `TaskConverter` + 事件驱动 `TaskScheduler` | ✅ |
-| 5 | 让模型按协议生成计划 | `TaskPlanner` + `submit_task_plan` + 校验修复 | ⬜ |
-| 6 | 接入 Agent Runtime | 替换 `dependencies: []` 硬编码，接 `TaskPlanExecutor` | ⬜ |
+| 5 | 让模型按协议生成计划 | `TaskPlanner` + `submit_task_plan` + 校验修复 | ✅ |
+| 6 | 接入 Agent Runtime | 替换 `dependencies: []` 硬编码，接 `TaskPlanExecutor` | ✅ |
 | 7 | 区分普通对话与任务规划 | `IntentRouter`：闲聊直达 / 任务进规划 | ⬜ |
 | 8 | 理解工具真实能力 | `ToolCatalog`：从 Schema/docstring 生成能力摘要 | ⬜ |
 | 9 | 严格工具参数校验 | JSON Schema 校验 + 错误回填 | ⬜ |
