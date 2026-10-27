@@ -836,17 +836,17 @@ __all__ = [
 
 ## 9. 验收清单（DoD）
 
-- [ ] `Intent` 和 `classify_intent` 工具存在
-- [ ] `IntentRouter` 分类失败时回退 CHAT
-- [ ] 分类请求强制 `classify_intent` + `thinking=False`
-- [ ] `ChatResponder` 不传 tools
-- [ ] `AgentRuntime.run()` 按意图选择 runner
-- [ ] 「曹操的儿子叫什么」走聊天，不产生 `plan_*`
-- [ ] 「今天成都适合酿酒吗」走任务，事件与第 6 课一致
-- [ ] `pytest tests/unit/test_lesson07_routing.py -q` → 10 passed
-- [ ] 全量 `pytest -q` → 38 passed
-- [ ] 两条冒烟命令都符合预期
-- [ ] `PlanRunner` / `TaskPlanner` / 调度器没有改动
+- [x] `Intent` 和 `classify_intent` 工具存在
+- [x] `IntentRouter` 分类失败时回退 CHAT
+- [x] 分类请求强制 `classify_intent` + `thinking=False`
+- [x] `ChatResponder` 不传 tools
+- [x] `AgentRuntime.run()` 按意图选择 runner
+- [x] 「曹操的儿子叫什么」走聊天，不产生 `plan_*`
+- [x] 「今天成都适合酿酒吗」走任务，事件与第 6 课一致
+- [x] `pytest tests/unit/test_lesson07_routing.py -q` → 10 passed
+- [x] 全量 `pytest -q` → 38 passed
+- [x] 两条冒烟命令都符合预期
+- [x] `PlanRunner` / `TaskPlanner` / 调度器没有改动
 
 ---
 

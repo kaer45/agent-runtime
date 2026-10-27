@@ -93,7 +93,7 @@
 | 4 | 计划转 Task 并接入调度器 | `TaskConverter` + 事件驱动 `TaskScheduler` | ✅ |
 | 5 | 让模型按协议生成计划 | `TaskPlanner` + `submit_task_plan` + 校验修复 | ✅ |
 | 6 | 接入 Agent Runtime | 替换 `dependencies: []` 硬编码，接 `TaskPlanExecutor` | ✅ |
-| 7 | 区分普通对话与任务规划 | `IntentRouter`：闲聊直达 / 任务进规划 | ⬜ |
+| 7 | 区分普通对话与任务规划 | `IntentRouter`：闲聊直达 / 任务进规划 | ✅ |
 | 8 | 理解工具真实能力 | `ToolCatalog`：从 Schema/docstring 生成能力摘要 | ⬜ |
 | 9 | 严格工具参数校验 | JSON Schema 校验 + 错误回填 | ⬜ |
 | 10 | 上下文预算管理 | `TokenBudget`：计数、裁剪、优先级 | ⬜ |
