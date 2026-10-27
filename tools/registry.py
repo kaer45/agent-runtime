@@ -1,7 +1,7 @@
 import inspect
 import json
 import logging
-from typing import Any, Callable, Dict, Union, get_args, get_origin
+from typing import Any, Callable, Dict, Literal, Union, get_args, get_origin
 
 from docstring_parser import parse as parse_docstring
 
@@ -25,6 +25,26 @@ def _to_json_schema_type(tp: Any) -> dict[str, Any]:
 
     origin = get_origin(tp)
     args = get_args(tp)
+
+    # Literal["dry", "sweet"] 既约束类型，也约束可选值。
+    # 只生成 type 会丢掉 enum，模型就不知道只能填这两个值。
+    if origin is Literal:
+        values = list(args)
+        if not values:
+            return {"type": "string"}
+
+        value_types = {
+            _TYPE_MAP.get(type(value), "string")
+            for value in values
+        }
+        json_type = (
+            next(iter(value_types))
+            if len(value_types) == 1
+            else sorted(value_types)
+        )
+        schema: dict[str, Any] = {"type": json_type}
+        schema["enum"] = values
+        return schema
 
     if origin is list:
         item_tp = args[0] if args else str
