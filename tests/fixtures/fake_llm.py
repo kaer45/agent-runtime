@@ -28,9 +28,15 @@ class FakeLLM:
         self.responses = list(responses)
         self.calls = []
 
-    async def chat(self, messages, tools=None, tool_choice=None,thinking=None):
+    async def chat(self, messages, tools=None, tool_choice=None, thinking=None, temperature=None):
         self.calls.append(
-            {"messages": list(messages), "tools": tools, "tool_choice": tool_choice,"thinking":thinking}
+            {
+                "messages": list(messages),
+                "tools": tools,
+                "tool_choice": tool_choice,
+                "thinking": thinking,
+                "temperature": temperature,
+            }
         )
         if not self.responses:
             raise AssertionError("FakeLLM 没有更多响应")

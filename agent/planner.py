@@ -176,6 +176,7 @@ class TaskPlanner:
                 tool_choice={"type": "function", "function": {"name": PLAN_TOOL_NAME}},
                 # DeepSeek 思考模式不支持 named tool_choice。
                 thinking=False,
+                temperature=0
             )
 
             call = self._find_plan_call(response)

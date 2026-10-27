@@ -22,6 +22,7 @@ class LLM:
         tools: list[dict] | None = None,
         tool_choice: str | dict | None = None,
         thinking: bool | None = None,
+        temperature: float | None = None
     ):
         """执行一次非流式对话请求并返回消息体。"""
         logger.debug("请求LLM: 消息数=%d, 工具数=%d", len(messages), len(tools or []))
@@ -35,6 +36,8 @@ class LLM:
             kwargs["extra_body"] = {
                 "thinking": {"type": "enabled" if thinking else "disabled"}
             }
+        if temperature is not None:
+            kwargs["temperature"] = temperature
 
         response = await self.client.chat.completions.create(
             model=self.model,
