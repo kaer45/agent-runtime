@@ -15,6 +15,11 @@
 | 2026-10-27 | 第 7 课 | 日志不输出、业务日志被 HTTP 日志淹没 | 已解决（logging_config） |
 | 2026-10-27 | 第 7 课 | 新增 `intent_detected` 导致 2 个 runtime 测试失败 | 已解决 |
 | 2026-10-27 | 第 7 课 | `temperature` 参数与 `FakeLLM` 不匹配 | 已解决 |
+| 2026-10-27 | 第 8 课 | 工具目录两处渲染，参数说明和能力边界丢失 | 已解决（ToolCatalog） |
+| 2026-10-27 | 第 8 课 | `Literal` 只生成 `type`，没生成 `enum` | 已解决 |
+| 2026-10-27 | 第 8 课 | Planner / Router 各自构建目录快照 | 已解决（共享实例） |
+| 2026-10-28 | 第 8 课遗留 | `float \| None` 被渲染成 `string` | 已解决（UnionType） |
+| 2026-10-28 | 环境 | `tools/` 子目录在受限沙箱下无法写/删 | 已解决（完全权限） |
 
 ---
 
@@ -27,6 +32,15 @@
 - **尝试过**：修复 ACL（无效）、给 `.git` 打低完整性标记（需要提权，且只解决一半）。
 - **最终解决**：把会话切到「完全权限」（full access），git 正常；之前为修权限做的 ACL/标签改动已撤销。
 - **教训**：涉及 `.git` 写操作（切分支、commit）时，优先用完全权限会话；不要在 ACL 上耗时间。
+
+### 2026-10-28 · workspace-write 下 `tools/` 子目录无法写/删
+
+- **现象**：准备第 8 课材料时，临时实现的 `tools/catalog.py` 需要撤掉；`Remove-Item` 报 `Access to the path ... is denied`。同一会话里工作区根目录可以正常新建/删除文件，但 `tools/` 下不行。
+- **根因**：DSH 的受限沙箱对该子目录的写入授权不完整；不是文件只读属性，也不是 Python 进程占用。`tools/` 的 ACL 缺少沙箱进程需要的授权，而工作区根目录有。
+- **尝试过**：`Remove-Item -Force`、`cmd /c del`、`git checkout` 恢复文件，均被拒绝；没有手动改 ACL。
+- **最终解决**：把这一次清理命令切到「完全权限」执行，恢复 4 个源文件并删除临时 `catalog.py`；没有留下 ACL 改动。
+- **验证**：`git status --short` 只剩预期的教程和测试文件。
+- **教训**：如果工作区根目录可写、某个子目录却稳定报 Access denied，先怀疑沙箱授权，不要反复试删除；清理临时文件时直接申请一次完全权限。
 
 ---
 
@@ -189,6 +203,132 @@
 - 规则只产出 `chat`，任务判断永远交给 LLM；失败回退 `chat`。
 - `intent_detected` 由 `AgentRuntime` 发，`run_id` 统一生成后传给两个 runner。
 - 结构化调用（路由、规划）用 `temperature=0`；聊天回答保留模型默认温度。
+
+---
+
+## 第 8 课：让规划器理解工具的真实能力
+
+### 8.1 · 工具目录两处手写拼接，参数说明和能力边界丢失
+
+- **现象**：Planner 和 Router 各自遍历 Registry 拼字符串：
+
+  ```text
+  Planner: - get_weather(city: string): 根据城市名获取当前天气信息...
+  Router:  - get_weather: 根据城市名获取当前天气信息...
+  ```
+
+  Planner 只用了参数类型和必填，丢掉了参数说明、默认值；Router 连参数签名都没有。同一个工具在两处描述不一致。
+
+- **根因**：渲染逻辑有两份，且都只消费了 `ToolRegistry` Schema 的一部分。Schema 里明明已经有 `description`、`default`、`enum` 等字段，却没有被带进 prompt。
+
+- **解决**：新增 `ToolCatalog`，统一从 `registry.get_all_schemas()` 生成 `ToolSpec`：
+
+  - `render()`：详细视图，给 Planner，包含参数名、类型、必填/可选、默认值、参数说明；
+  - `render_compact()`：紧凑视图，给 Router，保留签名和完整能力边界；
+  - Planner / Router 不再自己遍历 Registry。
+
+- **验证**：
+  - `18 passed`，全量 `78 passed`；
+  - Planner prompt 包含 `city: string（必填）`、`城市名，使用中文或拼音`、`不能查询未来预报`；
+  - Router prompt 包含 `- get_weather(city: string):`，但不包含 `### get_weather`。
+
+- **教训**：**目录不是第二份工具定义，而是 Schema 的另一种渲染**。一旦两处各自维护描述，就一定会漂移。
+
+### 8.2 · `Literal` 只生成 `type`，没生成 `enum`
+
+- **现象**：参数写成 `Literal["dry", "sweet"]` 时，生成的 Schema 只有：
+
+  ```json
+  {"type": "string"}
+  ```
+
+  模型不知道只能填 `dry` / `sweet`，目录也显示不出可选值。
+
+- **根因**：`_to_json_schema_type()` 只处理了基础类型、`list`、`Union`、`dict`，其他类型统一回退成 `string`。`Literal` 的 `get_origin` 不在已处理分支里。
+
+- **解决**：增加 `Literal` 分支，生成 `type + enum`；`ToolParameter` 增加 `enum`，详细视图渲染成：
+
+  ```text
+  style: string（必填，可选值: dry | sweet）
+  ```
+
+- **验证**：`test_registry_literal_emits_enum_and_catalog_renders_it` 通过。
+
+- **教训**：类型只说明「是什么」，`enum` 才说明「能取什么」。做工具目录时不能只搬 `type`。
+
+### 8.3 · `float | None` 被渲染成 `string`（第 8 课遗留）
+
+- **现象**：给新工具写 `budget: float | None = None`，Schema 和目录都显示成：
+
+  ```text
+  budget: string（可选，默认 null）
+  ```
+
+  类型完全错了；第 9 课如果用这份 Schema 校验，字符串预算也会被放行。
+
+- **根因**：Python 3.10+ 的 `X | None` 是 `types.UnionType`，而 `typing.Optional[X]` 是 `typing.Union`。代码只判断了后者，前者落到了 `return {"type": "string"}`。
+
+- **解决**：
+
+  ```python
+  if origin is Union or origin is types.UnionType:
+      ...
+  ```
+
+- **验证**：`test_recommend_wine_pairing_schema_has_complex_types` 断言 `budget` 是 `number`；新工具测试 `4 passed`，基线 `82 passed`。
+
+- **教训**：Python 3.10 之后有两种 union 写法，测试可选数值参数时一定要看生成的 Schema，不要只看函数注解。
+
+### 8.4 · Planner / Router 各自构建目录快照
+
+- **现象**：两边都调用 `ToolCatalog.from_registry(registry)`，内容相同，但不是同一个对象。当前 Registry 静态不变所以没出错，但：
+
+  - 重复解析一遍 Schema；
+  - 如果以后动态注册工具，两个快照可能版本不一致；
+  - 目录指纹也变成两份。
+
+- **根因**：构造函数默认各自建目录，没有注入点。
+
+- **解决**：
+
+  - `TaskPlanner` / `IntentRouter` 增加可选关键字参数 `catalog`；
+  - `AgentRuntime` 只构建一次，`self.catalog` 保存并传给两边；
+  - 启动时打印 `catalog.fingerprint()`。
+
+- **验证**：
+
+  ```python
+  assert runtime.task_runner.planner.catalog is runtime.catalog
+  assert runtime.router.catalog is runtime.catalog
+  ```
+
+- **教训**：**「同一来源」不等于「同一实例」**。静态场景下内容一致就够了，但只要以后会变更，就应该注入同一个快照。
+
+### 8.5 · docstring 没写能力边界，目录也变不出来
+
+- **现象**：`get_weather` 的描述只说「获取当前天气」，没有明确「不能查未来预报」。Router 仍然可能把「明天成都天气」判成 task。
+
+- **根因**：`ToolCatalog` 只能放大 docstring 里已有的信息；docstring 不写限制，目录再智能也无法推断。
+
+- **解决**：在 docstring 的 long description 里补：
+
+  ```text
+  只返回当前时刻的天气，不能查询未来预报或历史天气。
+  ```
+
+  紧凑视图保留完整 description，不截成第一句。
+
+- **验证**：Router prompt 包含「不能查询未来预报」；第 7 课的天气路由测试仍然通过。
+
+- **教训**：**目录的上限是 docstring**。想让模型选得准，先把「做什么、什么时候不该用、参数格式、返回什么」写清楚。
+
+### 8.6 · 本课设计结论
+
+- `ToolRegistry` 负责 Python 签名 + docstring → JSON Schema；`ToolCatalog` 只负责 Schema → 两种 prompt 视图。
+- 工具名/参数结构由函数签名决定，工具解释由 docstring 决定；不维护第三份手写目录。
+- Planner 用详细视图，Router 用紧凑视图；紧凑视图可以压缩参数，但不能删能力边界。
+- 目录是启动时快照；需要动态注册时重建，或注入新的 Catalog。
+- `enum`、共享实例、目录指纹是第 8 课的扩展，不改变「Schema 是唯一事实来源」这个原则。
 
 ---
 
