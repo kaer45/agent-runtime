@@ -8,7 +8,12 @@ from agent.plan_runner import PlanRunner
 from agent.planner import TaskPlanner
 from tasks.plan_executor import TaskPlanExecutor
 from tasks.scheduler import TaskScheduler
-from tools.builtin import brewing, get_current_time, get_weather
+from tools.builtin import (
+    brewing,
+    get_current_time,
+    get_weather,
+    recommend_wine_pairing,
+)
 from tools.catalog import ToolCatalog
 from tools.registry import ToolRegistry
 from tools.runner import ToolRunner
@@ -39,6 +44,7 @@ class AgentRuntime:
         registry.register(get_weather)
         registry.register(get_current_time)
         registry.register(brewing)
+        registry.register(recommend_wine_pairing)
 
         # 3. ToolRunner->TaskScheduler->TaskPlanExecutor,TaskPlanner->TaskPlan
         tool_runner = ToolRunner(registry=registry)

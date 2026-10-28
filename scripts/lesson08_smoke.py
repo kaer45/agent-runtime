@@ -1,5 +1,5 @@
 from logging_config import setup_logging
-from tools.builtin import brewing, get_current_time, get_weather
+from tools.builtin import brewing, get_current_time, get_weather,recommend_wine_pairing
 from tools.catalog import ToolCatalog
 from tools.registry import ToolRegistry
 
@@ -11,6 +11,7 @@ def main() -> None:
     registry.register(get_weather)
     registry.register(get_current_time)
     registry.register(brewing)
+    registry.register(recommend_wine_pairing)
 
     catalog = ToolCatalog.from_registry(registry)
 

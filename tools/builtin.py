@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime
+from typing import Literal
 
 async def get_weather(city: str) -> str:
     """获取指定城市的当前天气。
@@ -55,4 +56,52 @@ async def brewing(weather: str, current_time: str) -> str:
         f"天气是【{weather}】，"
         f"当前时间是【{current_time}】。"
         f"非常适合酿葡萄酒"
+    )
+
+
+async def recommend_wine_pairing(
+    occasion: Literal["dinner", "party", "gift"],
+    styles: list[Literal["dry", "sweet", "sparkling"]],
+    guest_count: int = 2,
+    budget: float | None = None,
+    include_notes: bool = False,
+) -> str:
+    """根据场合、人数和酒款风格生成模拟选酒建议。
+
+    只做本地模拟，不访问真实库存、价格或餐厅数据。
+    适合演示 list、Literal、可选参数和布尔开关等复杂参数。
+
+    Args:
+        occasion: 场合，只能是 dinner、party 或 gift。
+        styles: 酒款风格列表，可多选；每个元素只能是 dry、sweet 或 sparkling。
+        guest_count: 用餐人数，默认 2。
+        budget: 总预算（元）；不传表示不限预算。
+        include_notes: 是否附加配餐说明，默认 False。
+
+    Returns:
+        一段模拟选酒建议，例如 "模拟选酒建议：场合为【晚餐】..."。
+    """
+    occasion_label = {
+        "dinner": "晚餐",
+        "party": "派对",
+        "gift": "送礼",
+    }[occasion]
+    style_labels = {
+        "dry": "干型",
+        "sweet": "甜型",
+        "sparkling": "起泡",
+    }
+    style_text = "、".join(style_labels[style] for style in styles) or "未指定"
+
+    await asyncio.sleep(0.2)  # 模拟查询库存与配餐数据
+
+    budget_text = f"，总预算 {budget:.0f} 元" if budget is not None else ""
+    notes = ""
+    if include_notes:
+        notes = " 配餐建议：干型配牛排，甜型配甜点，起泡酒适合开场。"
+
+    return (
+        f"模拟选酒建议：场合为【{occasion_label}】，"
+        f"风格为【{style_text}】，共 {guest_count} 人{budget_text}。"
+        f"建议准备 2 款酒，按人数和预算调整数量。{notes}"
     )

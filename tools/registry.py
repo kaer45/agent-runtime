@@ -1,6 +1,7 @@
 import inspect
 import json
 import logging
+import types
 from typing import Any, Callable, Dict, Literal, Union, get_args, get_origin
 
 from docstring_parser import parse as parse_docstring
@@ -50,7 +51,9 @@ def _to_json_schema_type(tp: Any) -> dict[str, Any]:
         item_tp = args[0] if args else str
         return {"type": "array", "items": _to_json_schema_type(item_tp)}
 
-    if origin is Union:
+    # Python 3.10+ 的 X | None 使用 types.UnionType，
+    # 和 typing.Optional[X] 的 typing.Union 不是同一个对象。
+    if origin is Union or origin is types.UnionType:
         non_none = [a for a in args if a is not type(None)]
         if len(non_none) == 1:
             return _to_json_schema_type(non_none[0])
@@ -134,6 +137,10 @@ class ToolRegistry:
 
         properties: dict[str, dict[str, Any]] = {}
         required: list[str] = []
+        allows_extra = any(
+            param.kind is inspect.Parameter.VAR_KEYWORD
+            for param in signature.parameters.values()
+        )
 
         for param_name, param in signature.parameters.items():
             if param_name == "self" or param.kind in (
@@ -166,6 +173,8 @@ class ToolRegistry:
                     "type": "object",
                     "properties": properties,
                     "required": required,
+                    # 工具没有 **kwargs 时，多余的参数应当被校验器拒绝。
+                    "additionalProperties": allows_extra,
                 },
             },
         }
