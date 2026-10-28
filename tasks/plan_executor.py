@@ -4,6 +4,7 @@ from events.models import RuntimeEvent
 from tasks.converter import TaskConverter
 from tasks.plan import TaskPlan
 from tasks.scheduler import TaskScheduler
+from tasks.validator import ToolArgumentValidator
 from tools.registry import ToolRegistry
 
 
@@ -19,6 +20,7 @@ class TaskPlanExecutor:
         """
         self.scheduler = scheduler
         self.registry = registry
+        self.argument_validator = ToolArgumentValidator(registry)
 
     async def execute(self, plan: TaskPlan, run_id: str) -> AsyncIterator[RuntimeEvent]:
         """执行计划并逐个产出事件。
@@ -32,7 +34,9 @@ class TaskPlanExecutor:
         """
         dag = plan.get_dag()
         # 这里有必要重新校验，因为TaskPlan不一定只来自TaskPlanner，所以可以得到经验，来调用方有多个时，底层都要做校验
-        TaskConverter.validate_tools(plan, self.registry) 
+        TaskConverter.validate_tools(plan, self.registry)
+        # 预校验跳过 from_task；占位符解析后由调度器再做一次严格校验。
+        self.argument_validator.validate_plan(plan, allow_placeholders=True)
         tasks = TaskConverter.convert(plan)
 
         async for event in self.scheduler.run(tasks, dag, run_id):

@@ -2,4 +2,5 @@ fastapi>=0.143.5
 uvicorn>=0.54.0
 openai>=3.35.1
 docstring_parser>=0.18.0
+jsonschema>=4.23
 python-dotenv>=1.2.4

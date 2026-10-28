@@ -13,6 +13,7 @@ from pydantic import ValidationError
 
 from tasks.converter import TaskConverter
 from tasks.plan import TaskPlan
+from tasks.validator import ToolArgumentValidator
 from tools.registry import ToolRegistry
 from tools.catalog import ToolCatalog
 
@@ -127,6 +128,7 @@ class TaskPlanner:
             if catalog is not None
             else ToolCatalog.from_registry(registry)
         )
+        self.argument_validator = ToolArgumentValidator(registry)
 
     def build_messages(self, user_input: str) -> list[dict]:
         """构造初始消息：system 提示 + user 请求。"""
@@ -142,6 +144,10 @@ class TaskPlanner:
             + "\n可用工具（由注册表自动生成；参数格式：名字: 类型，必填/可选）：\n"
             + self.catalog.render()
         )
+    def _validate_plan(self, plan: TaskPlan) -> None:
+        """校验工具名和参数；预校验阶段跳过 from_task 占位符。"""
+        TaskConverter.validate_tools(plan, self.registry)
+        self.argument_validator.validate_plan(plan, allow_placeholders=True)
 
     async def plan(self, user_input: str) -> TaskPlan:
         """生成计划，失败时自动修复。
@@ -177,8 +183,8 @@ class TaskPlanner:
                 # 模型可能没调用工具，尝试把 content 当 JSON 计划解析。
                 try:
                     plan = TaskPlan.model_validate(json.loads(response.content or ""))
-                    TaskConverter.validate_tools(plan, self.registry)
-                    logger.warning("模型未调用工具，已从 content 解析计划")
+                    self._validate_plan(plan)
+                    logger.info("计划生成成功，任务数=%d", len(plan.tasks))
                     return plan
                 except (json.JSONDecodeError, ValidationError, ValueError, TypeError) as exc:
                     last_error = (
@@ -198,8 +204,7 @@ class TaskPlanner:
                 # 接口返回的 arguments 是 JSON 字符串。
                 arguments = json.loads(call.function.arguments)
                 plan = TaskPlan.model_validate(arguments)
-                # 参数级校验留到第 9 课。
-                TaskConverter.validate_tools(plan, self.registry)
+                self._validate_plan(plan)
                 logger.info("计划生成成功，任务数=%d", len(plan.tasks))
                 return plan
             except (json.JSONDecodeError, ValidationError, ValueError, TypeError) as exc:

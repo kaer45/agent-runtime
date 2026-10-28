@@ -7,6 +7,7 @@ from events.models import EventType, RuntimeEvent
 from tools.runner import ToolRunner
 from tasks.models import Task, TaskState
 from tasks.dag import TaskDAG
+from tasks.validator import ArgumentValidationError, ToolArgumentValidator
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,7 @@ logger = logging.getLogger(__name__)
 class TaskScheduler:
     def __init__(self, tool_runner: ToolRunner):
         self.tool_runner = tool_runner
+        self.argument_validator = ToolArgumentValidator(tool_runner.registry)
 
     async def _execute_task(self, task: Task) -> Task:
         """执行任务，并更新其状态。"""
@@ -69,6 +71,23 @@ class TaskScheduler:
                 ))
                 return
 
+            # 参数级解析
+            try:
+                self.argument_validator.validate_arguments(
+                    task.tool_name,
+                    task.arguments,
+                    task_id=task_id,
+                )
+            except ArgumentValidationError as e:
+                task.mark_failed(str(e))
+                pending_events.append(RuntimeEvent(
+                    type=EventType.TASK_FAILED,
+                    run_id=run_id,
+                    task_id=task_id,
+                    data={"tool_name": task.tool_name, "error": str(task.error)},
+                ))
+                return
+            
             logger.info("启动任务 %s (工具: %s)", task_id, task.tool_name)
             pending_events.append(RuntimeEvent(
                 type=EventType.TASK_STARTED, run_id=run_id, task_id=task_id,
