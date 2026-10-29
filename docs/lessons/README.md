@@ -28,7 +28,7 @@
 
 ## 2. 起点与目标形态
 
-**当前起点（第 10 课结束）**
+**当前起点（第 11 课结束）**
 
 - 已有：`ToolRegistry` / `ToolRunner` / 事件模型 / `TaskPlan` / `TaskDAG` / `TaskConverter` / `TaskScheduler`
 - 已有：`TaskPlanner` / `PlanRunner` / `IntentRouter` / `ChatResponder`，能分流聊天与任务
@@ -37,8 +37,9 @@
 - 已有：`ToolArgumentValidator`，Planner / Executor / Scheduler 三层参数校验
 - 已有：`TokenBudget`，按预算保留 system / 最新 user，工具调用组原子化
 - 已有：`validate_message_sequence`，校验 OpenAI 工具调用顺序
-- 测试：112 个用例通过
-- 缺口：摘要、状态、可靠性、工具生态、可观测未开始
+- 已有：`HistorySummarizer`，滚动摘要与上下文预览
+- 测试：120 个用例通过
+- 缺口：状态、可靠性、工具生态、可观测未开始
 
 **第 36 课目标形态**
 
@@ -102,7 +103,7 @@
 | 8 | 理解工具真实能力 | `ToolCatalog`：从 Schema/docstring 生成能力摘要 | ✅ |
 | 9 | 严格工具参数校验 | JSON Schema 校验 + 错误回填 | ✅ |
 | 10 | 上下文预算管理 | `TokenBudget`：计数、裁剪、优先级 | ✅ |
-| 11 | 对话历史摘要 | 滚动摘要，保留关键事实 | ⬜ |
+| 11 | 对话历史摘要 | 滚动摘要，保留关键事实 | ✅ |
 | 12 | 结构化会话状态 | `SessionState` 模型（偏好、目标、约束、进度） | ⬜ |
 | 13 | 自动提取状态变更 | `StateExtractor` → `StateDelta` | ⬜ |
 | 14 | 状态持久化 | SQLite `StateStore` | ⬜ |
@@ -365,5 +366,5 @@ agent-runtime/
 
 ## 10. 下一步
 
-- 第 10 课已完成：`TokenBudget` 已支持工具调用组原子裁剪；下一步进入第 11 课（对话历史摘要）。
+- 第 11 课已完成：`HistorySummarizer` 已能滚动摘要并做上下文预览；下一步进入第 12 课（结构化会话状态）。
 - 如果需要，我可以补写 `lesson1.md` ~ `lesson4.md` 作为复习与验收文档（代码已完成，主要用于巩固和查漏）。
