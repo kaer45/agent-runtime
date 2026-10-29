@@ -20,6 +20,10 @@
 | 2026-10-27 | 第 8 课 | Planner / Router 各自构建目录快照 | 已解决（共享实例） |
 | 2026-10-28 | 第 8 课遗留 | `float \| None` 被渲染成 `string` | 已解决（UnionType） |
 | 2026-10-28 | 环境 | `tools/` 子目录在受限沙箱下无法写/删 | 已解决（完全权限） |
+| 2026-10-29 | 第 10 课 | 按单条消息裁剪会把 tool_call / tool 拆开 | 已解决（原子组 + 校验） |
+| 2026-10-29 | 第 10 课 | 并行完成顺序与 tool 消息顺序不是一回事 | 已明确（按 tool_calls 排序） |
+| 2026-10-29 | 第 10 课 | token 估算不等于模型真实 token | 已明确（估算 + 安全余量） |
+| 2026-10-29 | 第 10 课 | 本地协议校验只覆盖工具序列 | 已明确（剩余交给 API） |
 
 ---
 
@@ -329,6 +333,113 @@
 - Planner 用详细视图，Router 用紧凑视图；紧凑视图可以压缩参数，但不能删能力边界。
 - 目录是启动时快照；需要动态注册时重建，或注入新的 Catalog。
 - `enum`、共享实例、目录指纹是第 8 课的扩展，不改变「Schema 是唯一事实来源」这个原则。
+
+---
+
+## 第 10 课：上下文预算管理
+
+### 10.1 · 按单条消息裁剪会把 tool_call / tool 拆开
+
+- **现象**：最初的 `TokenBudget.fit()` 按单条消息选择保留/丢弃。遇到：
+
+  ```text
+  0 assistant(tool_calls=[call_1])
+  1 tool(tool_call_id=call_1)
+  ```
+
+  预算不够时，可能只保留 `assistant`，也可能只保留 `tool`。结果是：
+
+  ```text
+  assistant(tool_calls) 没有 tool 结果
+  ```
+
+  或：
+
+  ```text
+  tool 消息前面没有 assistant tool_calls
+  ```
+
+  两种都可能被 API 直接拒绝。
+
+- **根因**：预算算法只看到「单条消息的 token 成本」，没有看到 `tool_calls[].id` 和 `tool_call_id` 的配对关系。
+
+- **解决**：
+
+  - 新增 `_message_groups()`；
+  - `assistant(tool_calls)` 与其后连续的 `tool` 消息合并成一个原子组；
+  - 组成本 = 组内 token 之和；
+  - 组要么全保留，要么全丢弃；
+  - `system` / 最新 user 所在组受保护。
+
+- **验证**：
+  - `test_fit_keeps_tool_call_and_tool_result_together`
+  - `test_fit_does_not_leave_orphan_tool_messages`
+  - 本课 `18 passed`，全量 `112 passed`。
+
+- **教训**：**预算裁剪不只是 token 问题，也是消息协议问题**。不能为了省 token 产生非法消息序列。
+
+### 10.2 · 并行完成顺序和 tool 消息顺序不是一回事
+
+- **现象**：并行执行会「先完成先返回」，例如 `call_2` 先完成，但 `assistant.tool_calls` 的顺序是 `[call_1, call_2]`。这时如果把完成顺序直接当成 tool 消息顺序，就可能和目标协议不一致。
+
+- **根因**：把「执行顺序」和「序列化顺序」混在一起了。执行可以并发乱序，但发给模型的消息应该稳定。
+
+- **解决**：
+  - 执行层继续并发；
+  - 结果按 `tool_call_id` 建 map；
+  - 构造 tool 消息时按 `assistant.tool_calls` 的顺序生成；
+  - `validate_message_sequence()` 保留严格顺序校验，作为最终边界。
+
+- **验证**：
+  - `test_validate_message_sequence_rejects_wrong_tool_order`
+  - `test_validate_message_sequence_requires_assistant_after_tools`
+  - 当前测试覆盖「拒绝错序」；真正的重排逻辑等接入 chat loop 时放在消息构造处，不放进 `TokenBudget`。
+
+- **教训**：**`tool_call_id` 负责语义匹配，数组顺序负责兼容性**。并发执行不要求按完成顺序返回，但发给模型前必须规范化。
+
+### 10.3 · token 估算不等于模型真实 token
+
+- **现象**：`estimate_tokens()` 用「中文 1 字 1 token，英文约 4 字符 1 token」估算；它和厂商 tokenizer、聊天模板、tool schema 的真实计数都可能不同。
+
+- **根因**：第 10 课不想引入 `tiktoken` 等依赖，只需要判断「哪条消息大、超了多少」，不是精确计费。
+
+- **解决**：
+  - `TokenCounter` 做成 `Callable[[str], int]`，测试注入 `len`；
+  - 生产环境可替换成厂商 tokenizer；
+  - 预留 `reserve_output`，并建议再留 10%–20% 安全余量；
+  - 当前只统计 messages，工具 Schema 的 token 还没算，接入 LLM 时要注意。
+
+- **验证**：预算逻辑用 `counter=len` 的测试完全确定；真实 tokenizer 只影响估算精度，不影响裁剪逻辑。
+
+- **教训**：**预算是规划，不是计费**。估算器可以替换，但低估会导致上下文溢出，必须留余量。
+
+### 10.4 · 本地协议校验只覆盖工具序列
+
+- **现象**：`validate_message_sequence()` 能拒绝孤儿 tool、缺少 tool 结果、tool 结果错序、tool 后不是 assistant，但它不校验：
+
+  - 多模态 `content` 的 part；
+  - `developer` 角色；
+  - tool schema 的完整结构；
+  - 所有厂商的聊天模板差异。
+
+- **根因**：完整 OpenAI 消息 Schema 很大，本课只需要保证预算裁剪不会破坏工具调用。
+
+- **解决**：
+  - 只校验和 tool_calls 相关的结构不变量；
+  - 超出范围的交给 API 或后续 `ContextBuilder`；
+  - 文档里明确这是「工具序列校验」，不是「完整协议校验」。
+
+- **验证**：6 个 `validate_message_sequence` 测试覆盖合法组、孤儿 tool、缺失结果、错序、tool 后非 assistant、`fit()` 入口拒绝非法序列。
+
+- **教训**：本地校验要明确边界；不要声称「保证完整 OpenAI 协议」，只能说「保证本模块关心的不变量」。
+
+### 10.5 · 本课设计结论
+
+- 预算裁剪的单位不是「消息」，而是「消息组」；工具组必须原子化。
+- system 和最新 user 是不可裁剪的；其余按新到旧尝试。
+- 执行可以并发乱序，消息必须按 `tool_calls` 顺序规范化。
+- token 计数是可注入的估算，预算必须留安全余量。
+- 本地校验只覆盖工具序列，完整协议最终仍以 API 校验为准。
 
 ---
 

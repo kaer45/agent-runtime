@@ -28,15 +28,17 @@
 
 ## 2. 起点与目标形态
 
-**当前起点（第 9 课结束）**
+**当前起点（第 10 课结束）**
 
 - 已有：`ToolRegistry` / `ToolRunner` / 事件模型 / `TaskPlan` / `TaskDAG` / `TaskConverter` / `TaskScheduler`
 - 已有：`TaskPlanner` / `PlanRunner` / `IntentRouter` / `ChatResponder`，能分流聊天与任务
 - 已有：`ToolCatalog`，Planner / Router 共用同一份工具能力目录
 - 已有：`recommend_wine_pairing`，覆盖 list / Literal / 可选参数等复杂类型
 - 已有：`ToolArgumentValidator`，Planner / Executor / Scheduler 三层参数校验
-- 测试：94 个用例通过
-- 缺口：上下文、状态、可靠性、工具生态、可观测未开始
+- 已有：`TokenBudget`，按预算保留 system / 最新 user，工具调用组原子化
+- 已有：`validate_message_sequence`，校验 OpenAI 工具调用顺序
+- 测试：112 个用例通过
+- 缺口：摘要、状态、可靠性、工具生态、可观测未开始
 
 **第 36 课目标形态**
 
@@ -99,7 +101,7 @@
 | 7 | 区分普通对话与任务规划 | `IntentRouter`：闲聊直达 / 任务进规划 | ✅ |
 | 8 | 理解工具真实能力 | `ToolCatalog`：从 Schema/docstring 生成能力摘要 | ✅ |
 | 9 | 严格工具参数校验 | JSON Schema 校验 + 错误回填 | ✅ |
-| 10 | 上下文预算管理 | `TokenBudget`：计数、裁剪、优先级 | ⬜ |
+| 10 | 上下文预算管理 | `TokenBudget`：计数、裁剪、优先级 | ✅ |
 | 11 | 对话历史摘要 | 滚动摘要，保留关键事实 | ⬜ |
 | 12 | 结构化会话状态 | `SessionState` 模型（偏好、目标、约束、进度） | ⬜ |
 | 13 | 自动提取状态变更 | `StateExtractor` → `StateDelta` | ⬜ |
@@ -363,5 +365,5 @@ agent-runtime/
 
 ## 10. 下一步
 
-- 第 9 课已完成：参数校验已接入 Planner / Executor / Scheduler；下一步进入第 10 课（上下文预算）。
+- 第 10 课已完成：`TokenBudget` 已支持工具调用组原子裁剪；下一步进入第 11 课（对话历史摘要）。
 - 如果需要，我可以补写 `lesson1.md` ~ `lesson4.md` 作为复习与验收文档（代码已完成，主要用于巩固和查漏）。
