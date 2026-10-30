@@ -5,6 +5,7 @@ from .extractor import (
     StateExtractor,
 )
 from .models import Goal, GoalStatus, SessionState
+from .store import StateStore, StateStoreError
 
 __all__ = [
     "Goal",
@@ -14,4 +15,6 @@ __all__ = [
     "StateDelta",
     "StateExtractionError",
     "StateExtractor",
+    "StateStore",
+    "StateStoreError",
 ]

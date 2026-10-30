@@ -19,3 +19,9 @@ env/
 
 # 日志
 *.log
+
+# 本地 SQLite 状态库 / 测试临时库
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
