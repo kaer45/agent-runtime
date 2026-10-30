@@ -28,7 +28,7 @@
 
 ## 2. 起点与目标形态
 
-**当前起点（第 11 课结束）**
+**当前起点（第 12 课结束）**
 
 - 已有：`ToolRegistry` / `ToolRunner` / 事件模型 / `TaskPlan` / `TaskDAG` / `TaskConverter` / `TaskScheduler`
 - 已有：`TaskPlanner` / `PlanRunner` / `IntentRouter` / `ChatResponder`，能分流聊天与任务
@@ -38,8 +38,8 @@
 - 已有：`TokenBudget`，按预算保留 system / 最新 user，工具调用组原子化
 - 已有：`validate_message_sequence`，校验 OpenAI 工具调用顺序
 - 已有：`HistorySummarizer`，滚动摘要与上下文预览
-- 测试：120 个用例通过
-- 缺口：状态、可靠性、工具生态、可观测未开始
+- 测试：128 个用例通过
+- 缺口：状态提取、持久化、可靠性、工具生态、可观测未开始
 
 **第 36 课目标形态**
 
@@ -104,7 +104,7 @@
 | 9 | 严格工具参数校验 | JSON Schema 校验 + 错误回填 | ✅ |
 | 10 | 上下文预算管理 | `TokenBudget`：计数、裁剪、优先级 | ✅ |
 | 11 | 对话历史摘要 | 滚动摘要，保留关键事实 | ✅ |
-| 12 | 结构化会话状态 | `SessionState` 模型（偏好、目标、约束、进度） | ⬜ |
+| 12 | 结构化会话状态 | `SessionState` 模型（偏好、目标、约束、进度） | ✅ |
 | 13 | 自动提取状态变更 | `StateExtractor` → `StateDelta` | ⬜ |
 | 14 | 状态持久化 | SQLite `StateStore` | ⬜ |
 | 15 | 多会话状态隔离 | `session_id` 隔离与并发安全 | ⬜ |
@@ -366,5 +366,6 @@ agent-runtime/
 
 ## 10. 下一步
 
-- 第 11 课已完成：`HistorySummarizer` 已能滚动摘要并做上下文预览；下一步进入第 12 课（结构化会话状态）。
+- 第 12 课已完成：`state/models.py` 提供 `SessionState` / `Goal` / `GoalStatus`，覆盖偏好、目标、约束、进度与事实。
+- 下一步进入第 13 课：从对话中提取状态变更（`StateExtractor` → `StateDelta`）。
 - 如果需要，我可以补写 `lesson1.md` ~ `lesson4.md` 作为复习与验收文档（代码已完成，主要用于巩固和查漏）。
