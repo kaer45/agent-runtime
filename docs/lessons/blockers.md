@@ -24,6 +24,9 @@
 | 2026-10-29 | 第 10 课 | 并行完成顺序与 tool 消息顺序不是一回事 | 已明确（按 tool_calls 排序） |
 | 2026-10-29 | 第 10 课 | token 估算不等于模型真实 token | 已明确（估算 + 安全余量） |
 | 2026-10-29 | 第 10 课 | 本地协议校验只覆盖工具序列 | 已明确（剩余交给 API） |
+| 2026-10-30 | 第 13 课 | StateDelta 操作语义：dict/list/状态机实体怎么设计 API | 已明确 |
+| 2026-10-30 | 第 13 课 | 校验分层：内部不变量 vs 上下文语义 | 已明确 |
+| 2026-10-30 | 第 13 课 | Extractor fail fast 与 Planner 修复循环的取舍 | 已明确 |
 
 ---
 
@@ -440,6 +443,86 @@
 - 执行可以并发乱序，消息必须按 `tool_calls` 顺序规范化。
 - token 计数是可注入的估算，预算必须留安全余量。
 - 本地校验只覆盖工具序列，完整协议最终仍以 API 校验为准。
+
+---
+
+## 第 13 课：自动提取状态变更
+
+### 13.1 · StateDelta 的 API 由数据语义决定，不是容器类型
+
+- **背景**：设计 `StateDelta` 时先问“这个字段是 dict 还是 list”，但只按容器类型选 API 不够。`constraints` 是 list，业务上是集合；`goals` 也是 list，业务上是带状态机的实体集合。
+- **结论**：
+
+  | 数据角色 | 例子 | 合适的操作 |
+  |---|---|---|
+  | 映射（按 key 覆盖） | `preferences` / `facts` / `progress` | `set` / `remove` |
+  | 集合（无序、按值去重） | `constraints` | `add` / `remove` |
+  | 状态机实体集合 | `goals` | `add` + `change_status` |
+  | 序列（顺序有意义） | messages、执行步骤 | `append` / `insert` / `move` |
+  | 图结构 | DAG tasks | `add/remove` 之外还要校验依赖和环 |
+
+- **本项目的落地**：
+  - `preferences_set` / `facts_set` / `progress_set`：dict 的 upsert，按 key 覆盖；
+  - `constraints_add` / `constraints_remove`：自由文本集合的 add/remove，不提供 `constraints_set`；
+  - `goals_add` / `goals_complete` / `goals_abandon`：新增实体 + 领域专用状态转换；
+  - 当前 `goals_add` 只能新增 `active` 目标，不能“新增即完成”；如果业务需要，后续让 `goals_add` 带初始 `status`，或允许 `add + complete` 同一目标。
+- **为什么 `constraints` 没有 `constraints_set`**：
+  - `_set` 的准确语义是“按 key 覆盖”，`constraints` 是自由文本，没有稳定 key；
+  - 如果 `constraints_set` 表示整表替换，模型必须完整复述所有旧约束，漏一条就丢一条；
+  - 修改一条约束的自然表示是“`constraints_remove` 旧原文 + `constraints_add` 新原文”，既增量又可审计；
+  - 只有把约束改成 `dict[str, str]`（如 `budget_max=800`）时，`constraints_set` 才有明确的 key 语义。
+- **教训**：**API 服从数据角色、访问模式和一致性需求，不是“看到 list 就 add/remove”**。容器类型只是第一层线索。
+
+### 13.2 · 校验分四层，StateDelta 只做前两层
+
+- **背景**：最初把校验分成“语法校验 / 语义校验”两层。这个二分方向对，但“内部数据一致性”其实已经是语义，只是局部语义；叫“语法”会掩盖边界。
+- **结论**：
+
+  | 层 | 负责 | 例子 |
+  |---|---|---|
+  | 1. Schema / shape | 类型、必填、未知字段 | `extra="forbid"`、`dict[str, Any]` |
+  | 2. 内部不变量（intrinsic） | 同一份数据内部不能矛盾 | 同一个 key 不能同时 set/remove；不能重复 |
+  | 3. 上下文语义（contextual） | 需要外部状态才能判断 | 目标是否存在、状态转换是否合法、预算是否合理 |
+  | 4. 执行/策略语义 | 工具、权限、并发、图 | 工具参数 Schema、DAG 环、审批 |
+
+- **本项目的映射**：
+  - `StateDelta`：第 1、2 层；不接收 `SessionState`，因此不做“目标是否存在”这类判断；
+  - `StateService`（第 16 课）：第 3 层，负责应用、版本、冲突和目标匹配；
+  - `TaskPlan`：第 1、2 层，外加一部分第 3 层（依赖存在、`from_task` 引用、环检测）；
+  - `ToolArgumentValidator` / `TaskDAG` / 权限层：第 4 层。
+- **注意 `TaskPlan` 不是“只做语法校验”**：当前 `TaskPlan.model_validator` 已经检查重复任务 ID、依赖存在、`from_task` 引用，并直接构造 `TaskDAG` 做环检测。它把“模型契约”和“图语义”耦合在一个 validator 里；第 22 课做预检时，可以再拆成 `PlanValidator` 链（依赖 → 引用 → DAG → 参数）。
+- **教训**：**“内部一致性”是局部语义，不是语法**。StateDelta 只保证“这份 delta 自身说得通”；“它对当前 SessionState 说不说得通”必须交给持有状态的上层。
+
+### 13.3 · Fail fast 与修复循环：由关键路径和恢复价值决定
+
+- **背景**：`TaskPlanner` 校验失败会把错误回填给模型重试；`StateExtractor` 则一次失败就抛 `StateExtractionError`。两者不是随意选择。
+- **结论**：
+  - **Fail fast**：错误在边界立刻暴露，不静默返回空 delta；
+  - **非阻塞**：调用方不 `await`，或把提取放到后台任务，失败不影响主回答；
+  - 两者正交：`StateExtractor` 现在做到 fail fast，但还没做到非阻塞；非阻塞是第 19 课调用方的策略。
+- **Planner 值得修复的原因**：
+  - 在用户等待的关键路径上；没有合法计划就无法执行；
+  - JSON / Schema 错误通常可恢复，把错误回填给模型有实际收益；
+  - 修复必须有界（当前 `max_repairs=2`），否则延迟和成本失控。
+- **Extractor 选择 fail fast 的原因**：
+  - 不在当前回答的关键路径上，失败可以跳过或后台重试；
+  - 空 delta 是正常结果（“这一轮没有状态变化”），不能和失败混为一谈；
+  - 如果静默返回空 delta，状态会悄悄变旧，比抛错更难排查。
+- **异步提取的配套条件**（第 19 课）：
+  1. 后台任务的异常必须被捕获/记录，避免 “Task exception was never retrieved”；
+  2. 同一 session 的 delta 要按轮次串行应用，避免后写覆盖先写；
+  3. 需要版本号/幂等键，防止重复应用；
+  4. 处理“读己之写”：下一轮读状态前，要么等待前一轮 apply，要么明确接受最终一致；
+  5. 提取失败要进日志/指标，不能只靠用户发现状态没更新。
+- **教训**：**fail fast 不等于阻塞，非阻塞也不等于吞错**。是否重试，取决于“在不在关键路径、错误是否可恢复、有没有降级路径、延迟预算够不够”。
+
+### 13.4 · 本课设计结论
+
+- `StateDelta` 是“变更建议”，不是“新状态”；提取器不修改 `SessionState`。
+- 操作语义跟着数据角色走：映射用 set/remove，集合用 add/remove，状态机实体用 add/transition。
+- `StateDelta` 只做 Schema + 内部不变量；上下文语义交给 `StateService`。
+- `StateExtractor` 失败 fail fast；是否异步、是否重试由上层决定。
+- 异步提取不是“fire-and-forget”，必须配套顺序、版本、幂等和可观测。
 
 ---
 
