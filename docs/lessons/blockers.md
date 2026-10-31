@@ -27,6 +27,10 @@
 | 2026-10-30 | 第 13 课 | StateDelta 操作语义：dict/list/状态机实体怎么设计 API | 已明确 |
 | 2026-10-30 | 第 13 课 | 校验分层：内部不变量 vs 上下文语义 | 已明确 |
 | 2026-10-30 | 第 13 课 | Extractor fail fast 与 Planner 修复循环的取舍 | 已明确 |
+| 2026-10-31 | 第 14-15 课 | StateStore 返回 `None`、SessionRegistry 返回空状态：两层语义 | 已明确 |
+| 2026-10-31 | 第 15 课 | 锁表只增不减：删除锁的竞态与代价 | 已明确 |
+| 2026-10-31 | 第 15 课 | 无缓存不等于一致性：`load` 只是快照 | 已明确 |
+| 2026-10-31 | 第 15 课 | 存储层切换需要 `Protocol`，异步存储会改变接口 | 已明确 |
 
 ---
 
@@ -523,6 +527,83 @@
 - `StateDelta` 只做 Schema + 内部不变量；上下文语义交给 `StateService`。
 - `StateExtractor` 失败 fail fast；是否异步、是否重试由上层决定。
 - 异步提取不是“fire-and-forget”，必须配套顺序、版本、幂等和可观测。
+
+---
+
+## 第 14-15 课：状态存储与多会话并发
+
+### 14.1 · `StateStore.load()` 返回 `None`，`SessionRegistry.load()` 返回空状态
+
+- **现象**：同一个“查状态”动作，两层返回值不同：
+  - `StateStore.load()` 不存在时返回 `None`；
+  - `SessionRegistry.load()` 不存在时返回 `SessionState()`。
+- **根因**：两层契约不同。
+  - `StateStore` 是持久化适配器，要如实回答“这一行有没有”；
+  - `SessionRegistry` 是会话生命周期入口，要回答“当前能用什么状态”；
+  - 新会话是正常路径，不是异常，空状态是合理的领域默认值。
+- **解决**：
+  - `StateStore`：`None` 表示不存在，损坏/读取失败抛 `StateStoreError`；
+  - `SessionRegistry` 只把 `None` 映射成空状态，不吞 `StateStoreError`；
+  - 需要区分“从未保存”和“已保存但内容为空”时用 `exists()`。
+- **注意**：
+  - `SessionRegistry.load()` 返回空状态**不会创建数据库行**；
+  - `exists()` + `load()` 不是原子的；要判断“这次是不是新建”，应在会话锁内做，或提供 `get_or_create()`；
+  - 如果觉得 `load` 名字有歧义，可以拆成 `load_or_default()` / `load()`。
+- **教训**：**存储层保留歧义，管理层给默认值**。`load` 不是“一定读到”，而是“读不到就给一个可用的初始状态”。
+
+### 15.1 · 锁表只增不减
+
+- **现象**：`SessionRegistry._locks` 为每个访问过的 `session_id` 创建一把 `asyncio.Lock`；`delete(session_id)` 只删状态，不删锁，锁表在进程生命周期内只增不减。
+- **根因**：
+  - 删除锁时如果还有持有者/等待者，新请求会发现表里没有锁，重新创建一把；
+  - 同一个 session 于是出现两把锁，两个任务可以同时进入临界区；
+  - `asyncio.Lock` 没有公开的等待者计数，当前也没有引用计数，无法判断“现在删是否安全”。
+- **代价**：
+  - 锁表大小 = 进程内需要加锁的 distinct session 数；
+  - 每个锁对象很小，但大量一次性 session 会持续占内存；
+  - `delete()` 不释放锁；重启进程才清空；
+  - 如果 session_id 由用户输入，随机 ID 可能变成无界内存增长点。
+- **后续方案**：
+  - 引用计数：`acquire` 进入加一、退出减一，计数为 0 且无人持有时再删；要求所有路径只走 `acquire`，不能暴露裸 `lock()`；
+  - 固定分片锁：`hash(session_id) % N`，内存有上限，但不同 session 可能伪共享；
+  - TTL/LRU：只淘汰空闲且无等待者的锁，实现更复杂；
+  - 不建议只用 `WeakValueDictionary`：锁被任务持有时 map entry 可能先消失，仍会出现两把锁。
+- **教训**：**锁的生命周期和状态的生命周期不是一回事**。当前先保证正确性，锁表增长作为已知限制；等会话量上来再做引用计数或分片。
+
+### 15.2 · 无缓存不等于一致性，`load` 只是快照
+
+- **现象**：容易把“`load` 每次从 SQLite 读、不共享缓存”理解成“保证一致性、不会脏读”。
+- **根因**：几个概念被混在一起：
+  - **无缓存**：避免两个请求共享同一个可变 `SessionState`，避免进程内缓存与 DB 不一致；
+  - **脏读**：读到未提交数据；SQLite 默认隔离已经避免，和无缓存不是同一件事；
+  - **丢失更新**：两个请求各自 `load` 再 `save`，后写覆盖先写；`load` 单独不解决；
+  - **跨进程一致性**：`asyncio.Lock` 只管当前进程，多 worker 无效。
+- **解决**：
+  - 同一会话的读-改-写必须走 `acquire()` 或 `update()`；
+  - `load()` 只提供“读已提交快照”，不提供跨调用的快照隔离；
+  - `save()` 是裸写入口，调用方绕过锁仍然会丢更新；如果要在 API 上强制，应该把 `save` 私有化，只暴露 `update`；
+  - 跨进程/多 worker 需要第 16 课的版本号/乐观锁，或外部锁。
+- **验证**：`test_same_session_updates_are_serialized` 用 10 个并发 increment 证明锁内 RMW 不丢更新；但把 `save` 放到锁外，测试就会退化。
+- **教训**：**无缓存解决“共享对象”，锁/事务解决“并发一致性”**；不要用一句“不会脏读”把两者混过去。
+
+### 15.3 · 存储层可切换，但需要接口和 async 边界
+
+- **现象**：说“`StateStore` 只是存储层，以后可以换”，但当前 `SessionRegistry` 直接依赖具体 `StateStore`。
+- **根因**：没有抽象接口；SQLite 实现细节（同步、连接、SQL）和上层耦合。
+- **解决**：
+  - 定义 `StateRepository` Protocol：`initialize/save/load/exists/delete`；
+  - SQLite 实现改名为 `SQLiteStateStore`，`SessionRegistry` 依赖 Protocol；
+  - 换 Redis/Postgres 时，注意存储 API 可能变成 async，`SessionRegistry.load/save` 也要跟着 async；
+  - 同步 SQLite 在 async 路由里会阻塞事件循环；当前单行操作很快，后续可用 `asyncio.to_thread` 或 `aiosqlite`。
+- **教训**：**“可以换存储”不是口号，接口要先抽出来**；同步换异步不是换实现，而是改调用契约。
+
+### 15.4 · 本课设计结论
+
+- `StateStore` 管持久化，`SessionRegistry` 管单进程会话并发；两层语义不同。
+- 每个 `session_id` 一把锁；`_locks_guard` 只保护“锁表创建”，不保护业务临界区。
+- 锁表只增不减是当前正确性优先的取舍；未来用引用计数/固定分片解决。
+- `load()` 不共享缓存，但只是快照；一致性由 `acquire`/`update` 和数据库事务共同保证。
+- 多进程/多 worker 下 `asyncio.Lock` 无效，版本号/乐观锁留给第 16 课。
 
 ---
 

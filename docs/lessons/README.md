@@ -28,7 +28,7 @@
 
 ## 2. 起点与目标形态
 
-**当前起点（第 14 课结束）**
+**当前起点（第 15 课结束）**
 
 - 已有：`ToolRegistry` / `ToolRunner` / 事件模型 / `TaskPlan` / `TaskDAG` / `TaskConverter` / `TaskScheduler`
 - 已有：`TaskPlanner` / `PlanRunner` / `IntentRouter` / `ChatResponder`，能分流聊天与任务
@@ -38,8 +38,8 @@
 - 已有：`TokenBudget`，按预算保留 system / 最新 user，工具调用组原子化
 - 已有：`validate_message_sequence`，校验 OpenAI 工具调用顺序
 - 已有：`HistorySummarizer`，滚动摘要与上下文预览
-- 测试：150 个用例通过
-- 缺口：多会话隔离、可靠性、工具生态、可观测未开始
+- 测试：161 个用例通过
+- 缺口：可靠性、工具生态、可观测未开始
 
 **第 36 课目标形态**
 
@@ -107,7 +107,7 @@
 | 12 | 结构化会话状态 | `SessionState` 模型（偏好、目标、约束、进度） | ✅ |
 | 13 | 自动提取状态变更 | `StateExtractor` → `StateDelta` | ✅ |
 | 14 | 状态持久化 | SQLite `StateStore` | ✅ |
-| 15 | 多会话状态隔离 | `session_id` 隔离与并发安全 | ⬜ |
+| 15 | 多会话状态隔离 | `session_id` 隔离与并发安全 | ✅ |
 | 16 | 状态变更闭环 | `StateService`：应用、版本、冲突处理 | ⬜ |
 | 17 | 状态接入模型上下文 | `StateRenderer` + 预算内注入 | ⬜ |
 | 18 | 上下文接入 Runtime | `ContextBuilder` 组装 messages | ⬜ |
@@ -255,6 +255,7 @@ agent-runtime/
 │   ├── models.py                  # 第 12 课
 │   ├── extractor.py               # 第 13 课
 │   ├── store.py                   # 第 14 课
+│   ├── session.py                 # 第 15 课
 │   ├── service.py                 # 第 16 课
 │   └── history.py                 # 第 20 课
 ├── tools/
@@ -369,5 +370,6 @@ agent-runtime/
 - 第 12 课已完成：`state/models.py` 提供 `SessionState` / `Goal` / `GoalStatus`，覆盖偏好、目标、约束、进度与事实。
 - 第 13 课已完成：`state/extractor.py` 提供 `StateDelta` / `StateExtractor` / `StateExtractionError`，能把本轮对话转成状态增量。
 - 第 14 课已完成：`state/store.py` 提供 SQLite `StateStore`，支持 `save/load/exists/delete`。
-- 下一步第 15 课：多会话隔离与并发安全。
+- 第 15 课已完成：`state/session.py` 提供 `SessionRegistry`，按会话隔离并串行化同会话写操作。
+- 下一步第 16 课：`StateService` 应用 delta、版本与冲突处理。
 - 如果需要，我可以补写 `lesson1.md` ~ `lesson4.md` 作为复习与验收文档（代码已完成，主要用于巩固和查漏）。
