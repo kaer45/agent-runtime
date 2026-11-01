@@ -31,6 +31,11 @@
 | 2026-10-31 | 第 15 课 | 锁表只增不减：删除锁的竞态与代价 | 已明确 |
 | 2026-10-31 | 第 15 课 | 无缓存不等于一致性：`load` 只是快照 | 已明确 |
 | 2026-10-31 | 第 15 课 | 存储层切换需要 `Protocol`，异步存储会改变接口 | 已明确 |
+| 2026-11-01 | 第 16 课 | `version` / `expected_version` / schema 迁移三个概念混淆 | 已明确 |
+| 2026-11-01 | 第 16 课 | `save_snapshot` 三条写路径与旧表 `version=0` 兼容 | 已明确 |
+| 2026-11-01 | 第 16 课 | 本地锁与数据库乐观锁各自负责什么 | 已明确 |
+| 2026-11-01 | 第 16 课 | 语义空操作比较错对象，版本仍然 +1 | 已修复（`current.state`） |
+| 2026-11-01 | 第 16-17 课 | Goal ID：hash vs UUID、生成边界与旧数据迁移 | 设计已定，待实现 |
 
 ---
 
@@ -604,6 +609,118 @@
 - 锁表只增不减是当前正确性优先的取舍；未来用引用计数/固定分片解决。
 - `load()` 不共享缓存，但只是快照；一致性由 `acquire`/`update` 和数据库事务共同保证。
 - 多进程/多 worker 下 `asyncio.Lock` 无效，版本号/乐观锁留给第 16 课。
+
+---
+
+## 第 16 课：状态变更闭环
+
+### 16.1 · `version` / `expected_version` / schema 迁移是三个概念
+
+- **现象**：看 `store.py` 时容易把“版本”混成一件事：
+  - 数据库里的 `version`；
+  - 调用方传入的 `expected_version`；
+  - 旧表没有 `version` 列时的 schema 迁移。
+- **根因**：
+  - `snapshot.version` 是**数据库当前版本**；
+  - `expected_version` 是**调用方声称自己基于哪个版本**；
+  - schema 迁移是“给旧表加一列”，和乐观锁不是一个层次。
+- **解决**：
+  - `version` 放在 `StateSnapshot` / `session_states`，不放进 `SessionState`；
+  - `expected_version=0` 表示“我认为还不存在”，同时兼容旧表 `version=0` 的行；
+  - 旧表加列用 `PRAGMA table_info` + `ALTER TABLE`，不重建表。
+- **教训**：**同名不同义要拆开**。版本号解决并发，迁移解决结构；不要用一个“版本升级”把它们混在一起。
+
+### 16.2 · `save_snapshot` 的三条写路径
+
+- **现象**：不理解 `expected_version=0` 为什么要先 `UPDATE` 再 `INSERT`，也容易漏掉 `expected_version>0` 的路径。
+- **根因**：数据库有三种状态，不是两种：
+  - 没有行；
+  - 有行且 `version=0`（旧数据迁移后）；
+  - 有行且 `version>0`。
+- **解决**：
+
+  | `expected_version` | 路径 |
+  |---|---|
+  | `None` | 无条件 upsert，版本 +1 |
+  | `0` | 先 `UPDATE ... WHERE version=0`；更新不到再 `INSERT version=1`；主键冲突就是冲突 |
+  | `N>0` | `UPDATE ... WHERE version=N`；`rowcount=0` 就是冲突 |
+
+  `expected_version=0` 先 UPDATE 的目的，是兼容旧表迁移后 `version=0` 的已有行；全新会话才走 INSERT。
+
+- **验证**：
+  - 新会话 `expected=0` → 1；
+  - 旧行 `version=0` + `expected=0` → 1；
+  - 已有 `version=1` + `expected=1` → 2；
+  - 再用 `expected=1` → `StateConflictError`。
+- **教训**：**版本检查要放进 `UPDATE ... WHERE version=?`，不能先 SELECT 再 UPDATE**；`rowcount` 才是原子的冲突信号。
+
+### 16.3 · 本地锁与数据库乐观锁的职责
+
+- **现象**：容易问“都有 `SessionRegistry` 锁了，为什么还要 version”。
+- **根因**：
+  - `asyncio.Lock` 只管当前进程、当前事件循环；
+  - 多 uvicorn worker / 多进程各有各的锁；
+  - 客户端也可能拿旧状态提交。
+- **解决**：
+  - 同进程并发：`SessionRegistry.acquire()` 串行化；
+  - 跨进程/旧客户端：`version` + `expected_version` 检测冲突；
+  - 冲突后不自动覆盖，抛 `StateConflictError`，由调用方重读/重试/合并。
+- **教训**：**锁解决“同时写”，版本解决“基于旧版本写”**；两者不是替代关系。
+
+### 16.4 · 语义空操作比较错对象
+
+- **现象**：加了：
+
+  ```python
+  if updated == current:
+      return current
+  ```
+
+  但测试仍然得到版本 2，不是预期的 1。
+- **根因**：
+  - `updated` 是 `SessionState`；
+  - `current` 是 `StateSnapshot`；
+  - 两者类型不同，`==` 直接返回 `False`，不会报错，`if` 静默不进入。
+- **解决**：
+
+  ```python
+  if updated == current.state:
+      return current
+  ```
+
+  改完后 `13 passed`，全量 `174 passed`。
+
+- **补充**：
+  - 不能用 `is`：`apply_delta()` 每次都会构造新对象；
+  - `delta.is_empty()` 和“delta 非空但状态没变”是两种情况，但都可以不写库；
+  - `expected_version` 检查仍在 no-op 之前：版本是前置条件，无变化不能绕过版本冲突。
+- **教训**：**`==` 比较不同类型不会报错，只会安静地返回 False**；跨层比较时要看清对象。
+
+### 16.5 · Goal ID：hash vs UUID，生成边界在哪
+
+- **现象**：最初设计“新目标 UUID + 旧目标文本 hash”，看起来零迁移；后来发现 hash 依赖文本，长期不稳定。
+- **根因**：
+  - hash ID 把“身份”绑定到“内容”；
+  - 以后改目标文本，ID 会变；
+  - 只在 `apply_delta` 里补 UUID 也不够：`StateService.get()`、`StateRenderer`、`StateExtractor` 可能先看到空 ID。
+- **最终设计**（见 [goal-id-design.md](goal-id-design.md)）：
+  - 统一 UUID，不用 hash；
+  - `Goal.id` 允许暂时为空，兼容旧 JSON；
+  - 不在 `Goal.model_validate` 里生成 ID；
+  - `ensure_goal_ids()` 在 `StateService.get/apply` 边界补 UUID；
+  - 补完立即按当前 version 保存，保证下一次读稳定；
+  - `goals_add` 仍是文本，`goals_complete/abandon` 只收 `g_` 开头 ID；
+  - 不需要改 SQLite schema。
+- **状态**：设计已定，代码待实现。
+- **教训**：**身份分配属于 Service，不属于模型/存储层**；补 ID 必须覆盖“读取路径”，不能只在写入路径补。
+
+### 16.6 · 本课设计结论
+
+- `StateStore` 管持久化和版本；`StateService` 管 delta 应用和冲突。
+- 写路径三条：无条件、创建、按版本更新；`rowcount=0` 是冲突。
+- 本地锁 + 数据库版本：单进程串行 + 跨进程冲突检测。
+- 空 delta / 语义空操作不写库、不涨版本；`expected_version` 仍然优先检查。
+- Goal ID 的最终方向是 UUID + Service 边界迁移，不用文本 hash。
 
 ---
 
