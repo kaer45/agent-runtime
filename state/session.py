@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator, Callable
 
 from state.models import SessionState
-from state.store import StateStore
+from state.store import StateSnapshot, StateStore
 
 StateMutator = Callable[[SessionState], SessionState]
 
@@ -50,6 +50,23 @@ class SessionRegistry:
     def delete(self, session_id: str) -> bool:
         """删除会话状态。"""
         return self.store.delete(session_id)
+
+    def load_snapshot(self, session_id: str) -> StateSnapshot | None:
+        """读取状态和版本；不存在返回 None。"""
+        return self.store.load_snapshot(session_id)
+
+    def save_snapshot(
+        self,
+        session_id: str,
+        state: SessionState,
+        expected_version: int | None,
+    ) -> int:
+        """按期望版本保存状态，返回新版本号。"""
+        return self.store.save_snapshot(
+            session_id,
+            state,
+            expected_version=expected_version,
+        )
 
     @property
     def lock_count(self) -> int:

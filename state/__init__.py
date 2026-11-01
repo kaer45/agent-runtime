@@ -5,19 +5,30 @@ from .extractor import (
     StateExtractor,
 )
 from .models import Goal, GoalStatus, SessionState
+from .service import StateApplyError, StateService, apply_delta
 from .session import SessionRegistry, StateMutator
-from .store import StateStore, StateStoreError
+from .store import (
+    StateConflictError,
+    StateSnapshot,
+    StateStore,
+    StateStoreError,
+)
 
 __all__ = [
     "Goal",
     "GoalStatus",
     "SessionState",
     "STATE_TOOL_NAME",
+    "StateApplyError",
+    "StateConflictError",
     "StateDelta",
     "StateExtractionError",
     "StateExtractor",
     "StateMutator",
+    "StateSnapshot",
     "SessionRegistry",
+    "StateService",
     "StateStore",
     "StateStoreError",
+    "apply_delta",
 ]
