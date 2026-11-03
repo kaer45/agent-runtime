@@ -49,6 +49,7 @@ def test_apply_creates_new_session_with_version_one(service):
     assert snapshot.version == 1
     assert snapshot.state.preferences["style"] == "dry"
     assert snapshot.state.goals[0].text == "买两瓶干型酒"
+    assert snapshot.state.goals[0].id.startswith("g_")
 
     loaded = asyncio.run(service.get("session-1"))
     assert loaded.version == 1
@@ -57,7 +58,7 @@ def test_apply_creates_new_session_with_version_one(service):
 
 def test_apply_all_delta_operations(service):
     async def main() -> None:
-        await service.apply(
+        first = await service.apply(
             "session-1",
             StateDelta(
                 preferences_set={"style": "dry", "budget": 500},
@@ -67,6 +68,7 @@ def test_apply_all_delta_operations(service):
                 goals_add=["买酒", "买酒杯"],
             ),
         )
+        goal_ids = {goal.text: goal.id for goal in first.state.goals}
 
         snapshot = await service.apply(
             "session-1",
@@ -80,8 +82,8 @@ def test_apply_all_delta_operations(service):
                 constraints_add=["不送人"],
                 constraints_remove=["预算不超过 500 元"],
                 goals_add=["再买两瓶"],
-                goals_complete=["买酒"],
-                goals_abandon=["买酒杯"],
+                goals_complete=[goal_ids["买酒"]],
+                goals_abandon=[goal_ids["买酒杯"]],
             ),
         )
 
@@ -155,7 +157,7 @@ def test_complete_missing_goal_raises_apply_error(service):
         with pytest.raises(StateApplyError, match="不存在"):
             await service.apply(
                 "session-1",
-                StateDelta(goals_complete=["不存在的目标"]),
+                StateDelta(goals_complete=["g_000000000000"]),
             )
 
         current = await service.get("session-1")
@@ -167,13 +169,20 @@ def test_complete_missing_goal_raises_apply_error(service):
 
 def test_complete_abandoned_goal_raises_apply_error(service):
     async def main() -> None:
-        await service.apply("session-1", StateDelta(goals_add=["买酒"]))
-        await service.apply("session-1", StateDelta(goals_abandon=["买酒"]))
+        snapshot = await service.apply(
+            "session-1",
+            StateDelta(goals_add=["买酒"]),
+        )
+        goal_id = snapshot.state.goals[0].id
+        await service.apply(
+            "session-1",
+            StateDelta(goals_abandon=[goal_id]),
+        )
 
         with pytest.raises(StateApplyError, match="放弃"):
             await service.apply(
                 "session-1",
-                StateDelta(goals_complete=["买酒"]),
+                StateDelta(goals_complete=[goal_id]),
             )
 
     asyncio.run(main())
@@ -191,6 +200,7 @@ def test_duplicate_goal_and_constraint_are_idempotent(service):
 
         assert snapshot.version == 1
         assert [goal.text for goal in snapshot.state.goals] == ["买酒"]
+        assert snapshot.state.goals[0].id.startswith("g_")
         assert snapshot.state.constraints == ["预算不超过 500 元"]
 
     asyncio.run(main())
@@ -212,6 +222,7 @@ def test_state_and_version_persist_across_service_instances(service):
         assert snapshot.version == 1
         assert snapshot.state.preferences["style"] == "dry"
         assert snapshot.state.goals[0].text == "买酒"
+        assert snapshot.state.goals[0].id.startswith("g_")
 
     asyncio.run(main())
 
@@ -233,6 +244,7 @@ def test_concurrent_apply_serializes_versions(service):
         current = await service.get("session-1")
         assert current.version == 10
         assert len(current.state.goals) == 10
+        assert all(goal.id for goal in current.state.goals)
 
     asyncio.run(main())
 
@@ -240,13 +252,13 @@ def test_concurrent_apply_serializes_versions(service):
 def test_apply_delta_does_not_mutate_input():
     state = SessionState(
         preferences={"style": "dry"},
-        goals=[Goal(text="买酒")],
+        goals=[Goal(id="g_111111111111", text="买酒")],
     )
     delta = StateDelta(
         preferences_set={"budget": 800},
         preferences_remove=["style"],
         constraints_add=["不送人"],
-        goals_complete=["买酒"],
+        goals_complete=["g_111111111111"],
     )
 
     updated = apply_delta(state, delta)
@@ -258,6 +270,39 @@ def test_apply_delta_does_not_mutate_input():
     assert updated.preferences == {"budget": 800}
     assert updated.constraints == ["不送人"]
     assert updated.goals[0].status is GoalStatus.DONE
+
+
+def test_get_migrates_legacy_goal_ids_once(service):
+    async def main() -> None:
+        legacy = SessionState(goals=[Goal(text="买酒")])
+        service.registry.save("session-1", legacy)
+
+        first = await service.get("session-1")
+        assert first.version == 2
+        assert first.state.goals[0].id.startswith("g_")
+
+        second = await service.get("session-1")
+        assert second.version == 2
+        assert second.state.goals[0].id == first.state.goals[0].id
+
+    asyncio.run(main())
+
+
+def test_apply_migrates_legacy_ids_and_applies_in_one_save(service):
+    async def main() -> None:
+        legacy = SessionState(goals=[Goal(text="买酒")])
+        service.registry.save("session-1", legacy)
+
+        snapshot = await service.apply(
+            "session-1",
+            StateDelta(goals_add=["买酒杯"]),
+        )
+
+        assert snapshot.version == 2
+        assert len(snapshot.state.goals) == 2
+        assert all(goal.id for goal in snapshot.state.goals)
+
+    asyncio.run(main())
 
 
 def test_store_snapshot_save_detects_stale_version(service):

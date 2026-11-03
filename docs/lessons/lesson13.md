@@ -6,6 +6,8 @@
 > 预计用时：2-3 小时
 > 本课分支：`dev`
 
+> **后续变更（2026-11-02）**：`goals_complete` / `goals_abandon` 已改为目标 ID，不再使用 `goal.text`。本文是第 13 课当时版本；最新设计见 [goal-id-design.md](goal-id-design.md)。
+
 ---
 
 ## 0. 开工前检查

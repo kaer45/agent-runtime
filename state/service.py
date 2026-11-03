@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 from copy import deepcopy
 
 from state.extractor import StateDelta
@@ -16,6 +18,11 @@ from state.store import StateConflictError, StateSnapshot
 
 class StateApplyError(ValueError):
     """Delta 无法应用到当前状态（例如目标不存在、状态转换非法）。"""
+
+
+def new_goal_id() -> str:
+    """生成新的目标 ID：g_ + 12 位十六进制。"""
+    return "g_" + uuid.uuid4().hex[:12]
 
 
 def apply_delta(state: SessionState, delta: StateDelta) -> SessionState:
@@ -35,6 +42,11 @@ def apply_delta(state: SessionState, delta: StateDelta) -> SessionState:
     constraints = list(state.constraints)
     goals = [goal.model_copy(deep=True) for goal in state.goals]
 
+    # 一次建索引，避免每个 goal 操作都线性扫描。
+    goal_by_id = {goal.id: index for index, goal in enumerate(goals)}
+    goal_texts = {goal.text for goal in goals}
+    constraint_set = set(constraints)
+
     for key in delta.preferences_remove:
         preferences.pop(key, None)
     for key, value in delta.preferences_set.items():
@@ -50,33 +62,43 @@ def apply_delta(state: SessionState, delta: StateDelta) -> SessionState:
     for key, value in delta.progress_set.items():
         progress[key] = value
 
-    for text in delta.constraints_remove:
-        if text in constraints:
-            constraints.remove(text)
+    to_remove = [
+        text for text in delta.constraints_remove if text in constraint_set
+    ]
+    for text in to_remove:
+        constraints.remove(text)
+        constraint_set.discard(text)
+
     for text in delta.constraints_add:
-        if text not in constraints:
+        if text not in constraint_set:
             constraints.append(text)
+            constraint_set.add(text)
 
     for text in delta.goals_add:
-        if not any(goal.text == text for goal in goals):
-            goals.append(Goal(text=text))
+        if text not in goal_texts:
+            goals.append(Goal(id=new_goal_id(), text=text))
+            goal_texts.add(text)
 
-    for text in delta.goals_complete:
-        index = _find_goal(goals, text)
+    for goal_id in delta.goals_complete:
+        index = goal_by_id.get(goal_id, None)
+        if index is None:
+            raise StateApplyError(f"目标不存在：{goal_id}")
         goal = goals[index]
         if goal.status == GoalStatus.DONE:
             continue
         if goal.status == GoalStatus.ABANDONED:
-            raise StateApplyError(f"已放弃的目标不能标记完成：{text}")
+            raise StateApplyError(f"已放弃的目标不能标记完成：{goal_id}")
         goals[index] = goal.model_copy(update={"status": GoalStatus.DONE})
 
-    for text in delta.goals_abandon:
-        index = _find_goal(goals, text)
+    for goal_id in delta.goals_abandon:
+        index = goal_by_id.get(goal_id, None)
+        if index is None:
+            raise StateApplyError(f"目标不存在：{goal_id}")
         goal = goals[index]
         if goal.status == GoalStatus.ABANDONED:
             continue
         if goal.status == GoalStatus.DONE:
-            raise StateApplyError(f"已完成的目标不能标记放弃：{text}")
+            raise StateApplyError(f"已完成的目标不能标记放弃：{goal_id}")
         goals[index] = goal.model_copy(update={"status": GoalStatus.ABANDONED})
 
     return SessionState(
@@ -88,11 +110,28 @@ def apply_delta(state: SessionState, delta: StateDelta) -> SessionState:
     )
 
 
-def _find_goal(goals: list[Goal], text: str) -> int:
+def ensure_goal_ids(state: SessionState) -> tuple[SessionState, bool]:
+    """给缺失 ID 的 Goal 补 UUID：不修改传入的 state。"""
+    goals = [goal.model_copy(deep=True) for goal in state.goals]
+    seen = {goal.id for goal in goals if goal.id}
+    changed = False
+
     for index, goal in enumerate(goals):
-        if goal.text == text:
-            return index
-    raise StateApplyError(f"目标不存在：{text}")
+        if goal.id:
+            continue
+
+        new_id = new_goal_id()
+        while new_id in seen:
+            new_id = new_goal_id()
+
+        seen.add(new_id)
+        goals[index] = goal.model_copy(update={"id": new_id})
+        changed = True
+
+    if not changed:
+        return state, False
+
+    return state.model_copy(update={"goals": goals}), True
 
 
 class StateService:
@@ -110,10 +149,22 @@ class StateService:
         """读取状态快照；不存在的会话返回空状态和版本 0。"""
         async with self.registry.acquire(session_id):
             snapshot = self.registry.load_snapshot(session_id)
-            return snapshot if snapshot is not None else StateSnapshot(
-                state=SessionState(),
-                version=0,
+            if snapshot is None:
+                return StateSnapshot(state=SessionState(), version=0)
+
+            state, changed = ensure_goal_ids(snapshot.state)
+
+            if not changed:
+                return snapshot
+
+            # 旧数据迁移：把补好的 ID 写回，版本 +1
+            version = self.registry.save_snapshot(
+                session_id=session_id,
+                state=state,
+                expected_version=snapshot.version,
             )
+
+            return StateSnapshot(state=state, version=version)
 
     async def apply(
         self,
@@ -159,13 +210,30 @@ class StateService:
                     f"当前 {current.version}"
                 )
 
+            state, migrated = ensure_goal_ids(current.state)
+
             if delta.is_empty():
-                return current
+                if not migrated:
+                    return current
+                version = self.registry.save_snapshot(
+                    session_id=session_id,
+                    state=state,
+                    expected_version=current.version,
+                )
+                return StateSnapshot(state=state, version=version)
 
-            updated = apply_delta(current.state, delta)
+            updated = apply_delta(state, delta)
 
-            if updated == current.state:
-                return current
+            if updated == state:
+                if not migrated:
+                    return current
+
+                version = self.registry.save_snapshot(
+                    session_id,
+                    state,
+                    expected_version=current.version,
+                )
+                return StateSnapshot(state=state, version=version)
 
             new_version = self.registry.save_snapshot(
                 session_id,

@@ -18,7 +18,7 @@ from tests.fixtures.fake_llm import FakeLLM, FakeMessage, FakeToolCall
 def current_state() -> SessionState:
     return SessionState(
         preferences={"style": "dry", "budget": 500},
-        goals=[{"text": "买两瓶干型酒"}],
+        goals=[{"id": "g_111111111111", "text": "买两瓶干型酒"}],
         constraints=["预算不超过 500 元"],
         progress={"选酒": "in_progress"},
         facts={"产区": "波尔多"},
@@ -73,8 +73,8 @@ def test_state_delta_accepts_all_operations_and_strips_text():
         facts_set={"产区": "勃艮第"},
         facts_remove=["年份"],
         goals_add=["  买两瓶干型酒  "],
-        goals_complete=["选酒"],
-        goals_abandon=["买酒杯"],
+        goals_complete=["g_111111111111"],
+        goals_abandon=["g_222222222222"],
         constraints_add=["  预算不超过 800 元  "],
         constraints_remove=["预算不超过 500 元"],
         progress_set={"选酒": "done"},
@@ -86,8 +86,8 @@ def test_state_delta_accepts_all_operations_and_strips_text():
     assert delta.facts_set == {"产区": "勃艮第"}
     assert delta.facts_remove == ["年份"]
     assert delta.goals_add == ["买两瓶干型酒"]
-    assert delta.goals_complete == ["选酒"]
-    assert delta.goals_abandon == ["买酒杯"]
+    assert delta.goals_complete == ["g_111111111111"]
+    assert delta.goals_abandon == ["g_222222222222"]
     assert delta.constraints_add == ["预算不超过 800 元"]
     assert delta.constraints_remove == ["预算不超过 500 元"]
     assert delta.progress_set == {"选酒": "done"}
@@ -120,10 +120,10 @@ def test_delta_rejects_conflicting_operations():
         )
 
     with pytest.raises(ValidationError):
-        StateDelta(goals_add=["买酒"], goals_complete=["买酒"])
-
-    with pytest.raises(ValidationError):
-        StateDelta(goals_complete=["买酒"], goals_abandon=["买酒"])
+        StateDelta(
+            goals_complete=["g_111111111111"],
+            goals_abandon=["g_111111111111"],
+        )
 
 
 def test_delta_rejects_blank_duplicate_and_unknown_fields():
@@ -138,6 +138,14 @@ def test_delta_rejects_blank_duplicate_and_unknown_fields():
 
     with pytest.raises(ValidationError):
         StateDelta(preferences_set={"   ": 1})
+
+    with pytest.raises(ValidationError):
+        StateDelta(goals_complete=["买酒"])
+
+    with pytest.raises(ValidationError):
+        StateDelta(
+            goals_complete=["g_111111111111", "g_111111111111"]
+        )
 
     with pytest.raises(ValidationError):
         StateDelta(unknown_field="x")
@@ -169,6 +177,8 @@ def test_extract_builds_prompt_and_forces_delta_tool():
 
     assert "状态提取器" in system
     assert "不要执行" in system
+    assert "goal.id" in system
+    assert "goal.text" in system
     assert "style" in user and "dry" in user
     assert "预算改成 800" in user
     assert "买两瓶干型酒" in user

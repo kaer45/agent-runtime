@@ -34,13 +34,16 @@ async def main() -> None:
         print("第一次 apply: version =", first.version)
         print(first.state.model_dump_json(indent=2))
 
+        goal_id = first.state.goals[0].id
+        print("目标 ID:", goal_id)
+
         second = await service.apply(
             "demo-session",
             StateDelta(
                 preferences_set={"budget": 800},
                 constraints_remove=["预算不超过 500 元"],
                 constraints_add=["预算不超过 800 元"],
-                goals_complete=["买两瓶干型酒"],
+                goals_complete=[goal_id],
             ),
             expected_version=first.version,
         )

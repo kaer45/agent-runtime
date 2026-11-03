@@ -63,10 +63,47 @@ def test_unknown_field_is_rejected():
         SessionState(unknown_field="x")
 
 
+def test_goal_id_defaults_empty_and_legacy_state_loads():
+    assert Goal(text="买酒").id == ""
+
+    state = SessionState.model_validate(
+        {"goals": [{"text": "买酒"}, {"text": "买酒杯"}]}
+    )
+
+    assert [goal.id for goal in state.goals] == ["", ""]
+
+
+def test_goal_id_format_is_validated():
+    goal = Goal(id="g_111111111111", text="买酒")
+    assert goal.id == "g_111111111111"
+
+    with pytest.raises(ValidationError):
+        Goal(id="g_111", text="买酒")
+
+    with pytest.raises(ValidationError):
+        Goal(id="买酒", text="买酒")
+
+
+def test_duplicate_goal_ids_are_rejected():
+    with pytest.raises(ValidationError, match="重复目标 ID"):
+        SessionState(
+            goals=[
+                {"id": "g_111111111111", "text": "买酒"},
+                {"id": "g_111111111111", "text": "买酒杯"},
+            ]
+        )
+
+
 def test_state_round_trips_through_json():
     state = SessionState(
         preferences={"style": "dry"},
-        goals=[{"text": "买酒", "status": "done"}],
+        goals=[
+            {
+                "id": "g_111111111111",
+                "text": "买酒",
+                "status": "done",
+            }
+        ],
         constraints=["预算 500"],
         progress={"选酒": "done"},
         facts={"产区": "波尔多"},
@@ -76,4 +113,5 @@ def test_state_round_trips_through_json():
     restored = SessionState.model_validate(payload)
 
     assert restored == state
+    assert payload["goals"][0]["id"] == "g_111111111111"
     assert payload["goals"][0]["status"] == "done"

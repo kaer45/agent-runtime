@@ -38,7 +38,7 @@
 - 已有：`TokenBudget`，按预算保留 system / 最新 user，工具调用组原子化
 - 已有：`validate_message_sequence`，校验 OpenAI 工具调用顺序
 - 已有：`HistorySummarizer`，滚动摘要与上下文预览
-- 测试：174 个用例通过
+- 测试：179 个用例通过
 - 缺口：可靠性、工具生态、可观测未开始
 
 **第 36 课目标形态**
@@ -372,5 +372,6 @@ agent-runtime/
 - 第 14 课已完成：`state/store.py` 提供 SQLite `StateStore`，支持 `save/load/exists/delete`。
 - 第 15 课已完成：`state/session.py` 提供 `SessionRegistry`，按会话隔离并串行化同会话写操作。
 - 第 16 课已完成：`state/service.py` 提供 `StateService`，支持 delta 应用、版本递增和冲突检测。
+- Goal ID 升级已完成：`Goal.id` + `ensure_goal_ids()` + `goals_complete/abandon` 使用 ID。
 - 下一步第 17 课：状态渲染进模型上下文（`StateRenderer`）。
 - 如果需要，我可以补写 `lesson1.md` ~ `lesson4.md` 作为复习与验收文档（代码已完成，主要用于巩固和查漏）。
