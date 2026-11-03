@@ -35,7 +35,7 @@
 | 2026-11-01 | 第 16 课 | `save_snapshot` 三条写路径与旧表 `version=0` 兼容 | 已明确 |
 | 2026-11-01 | 第 16 课 | 本地锁与数据库乐观锁各自负责什么 | 已明确 |
 | 2026-11-01 | 第 16 课 | 语义空操作比较错对象，版本仍然 +1 | 已修复（`current.state`） |
-| 2026-11-01 | 第 16-17 课 | Goal ID：hash vs UUID、生成边界与旧数据迁移 | 设计已定，待实现 |
+| 2026-11-01 | 第 16-17 课 | Goal ID：hash vs UUID、生成边界与旧数据迁移 | 已实现（UUID） |
 
 ---
 
@@ -711,7 +711,7 @@
   - 补完立即按当前 version 保存，保证下一次读稳定；
   - `goals_add` 仍是文本，`goals_complete/abandon` 只收 `g_` 开头 ID；
   - 不需要改 SQLite schema。
-- **状态**：设计已定，代码待实现。
+- **状态**：已实现。`Goal.id`、`ensure_goal_ids()`、`StateService.get/apply` 迁移、Delta ID 校验均已落地；全量 179 passed。
 - **教训**：**身份分配属于 Service，不属于模型/存储层**；补 ID 必须覆盖“读取路径”，不能只在写入路径补。
 
 ### 16.6 · 本课设计结论
