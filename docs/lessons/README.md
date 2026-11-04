@@ -28,7 +28,7 @@
 
 ## 2. 起点与目标形态
 
-**当前起点（第 17 课结束）**
+**当前起点（第 18 课结束）**
 
 - 已有：`ToolRegistry` / `ToolRunner` / 事件模型 / `TaskPlan` / `TaskDAG` / `TaskConverter` / `TaskScheduler`
 - 已有：`TaskPlanner` / `PlanRunner` / `IntentRouter` / `ChatResponder`，能分流聊天与任务
@@ -39,7 +39,8 @@
 - 已有：`validate_message_sequence`，校验 OpenAI 工具调用顺序
 - 已有：`HistorySummarizer`，滚动摘要与上下文预览
 - 已有：`StateRenderer`，按 section 优先级把状态渲染进预算
-- 测试：190 个用例通过
+- 已有：`ContextBuilder`，把 system prompt、状态、摘要和历史组装成 messages
+- 测试：204 个用例通过
 - 缺口：可靠性、工具生态、可观测未开始
 
 **第 36 课目标形态**
@@ -111,7 +112,7 @@
 | 15 | 多会话状态隔离 | `session_id` 隔离与并发安全 | ✅ |
 | 16 | 状态变更闭环 | `StateService`：应用、版本、冲突处理 | ✅ |
 | 17 | 状态接入模型上下文 | `StateRenderer` + 预算内注入 | ✅ |
-| 18 | 上下文接入 Runtime | `ContextBuilder` 组装 messages | ⬜ |
+| 18 | 上下文接入 Runtime | `ContextBuilder` 组装 messages | ✅ |
 | 19 | 状态更新接入对话流程 | 回合后提取、异步更新、幂等 | ⬜ |
 | 20 | 统一历史管理与持久化 | 消息/摘要/状态快照统一存储与保留策略 | ⬜ |
 | 21 | 任务状态机 | 显式 FSM + 合法转换守卫 | ⬜ |
@@ -376,5 +377,6 @@ agent-runtime/
 - 第 16 课已完成：`state/service.py` 提供 `StateService`，支持 delta 应用、版本递增和冲突检测。
 - Goal ID 升级已完成：`Goal.id` + `ensure_goal_ids()` + `goals_complete/abandon` 使用 ID。
 - 第 17 课已完成：`context/renderer.py` 提供 `StateRenderer`，把状态按 section 渲染进 token 预算。
-- 下一步第 18 课：用 `ContextBuilder` 组装最终 messages。
+- 第 18 课已完成：`context/builder.py` 提供 `ContextBuilder`，把 system prompt、状态、摘要和历史组装成预算内 messages。
+- 下一步第 19 课：把回合后的状态提取接进对话流程。
 - 如果需要，我可以补写 `lesson1.md` ~ `lesson4.md` 作为复习与验收文档（代码已完成，主要用于巩固和查漏）。
