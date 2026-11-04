@@ -1,3 +1,4 @@
+from .builder import BuiltContext, ContextBuilder
 from .budget import BudgetExceededError, BudgetResult, TokenBudget, estimate_tokens
 from .messages import MessageSequenceError, validate_message_sequence
 from .renderer import RenderedState, StateRenderer
@@ -6,6 +7,8 @@ from .summarizer import HistorySummarizer, RollingSummary, SummaryError
 __all__ = [
     "BudgetExceededError",
     "BudgetResult",
+    "BuiltContext",
+    "ContextBuilder",
     "HistorySummarizer",
     "MessageSequenceError",
     "RenderedState",
