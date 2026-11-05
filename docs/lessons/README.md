@@ -28,7 +28,7 @@
 
 ## 2. 起点与目标形态
 
-**当前起点（第 18 课结束）**
+**当前起点（第 19 课结束）**
 
 - 已有：`ToolRegistry` / `ToolRunner` / 事件模型 / `TaskPlan` / `TaskDAG` / `TaskConverter` / `TaskScheduler`
 - 已有：`TaskPlanner` / `PlanRunner` / `IntentRouter` / `ChatResponder`，能分流聊天与任务
@@ -40,7 +40,8 @@
 - 已有：`HistorySummarizer`，滚动摘要与上下文预览
 - 已有：`StateRenderer`，按 section 优先级把状态渲染进预算
 - 已有：`ContextBuilder`，把 system prompt、状态、摘要和历史组装成 messages
-- 测试：204 个用例通过
+- 已有：`TurnStateUpdater`，回合后串行、幂等地提取并应用状态
+- 测试：217 个用例通过
 - 缺口：可靠性、工具生态、可观测未开始
 
 **第 36 课目标形态**
@@ -113,7 +114,7 @@
 | 16 | 状态变更闭环 | `StateService`：应用、版本、冲突处理 | ✅ |
 | 17 | 状态接入模型上下文 | `StateRenderer` + 预算内注入 | ✅ |
 | 18 | 上下文接入 Runtime | `ContextBuilder` 组装 messages | ✅ |
-| 19 | 状态更新接入对话流程 | 回合后提取、异步更新、幂等 | ⬜ |
+| 19 | 状态更新接入对话流程 | 回合后提取、异步更新、幂等 | ✅ |
 | 20 | 统一历史管理与持久化 | 消息/摘要/状态快照统一存储与保留策略 | ⬜ |
 | 21 | 任务状态机 | 显式 FSM + 合法转换守卫 | ⬜ |
 | 22 | DAG 校验与死锁检测 | 预检：环、不可达、无进展、超时 | ⬜ |
@@ -136,7 +137,73 @@
 
 ---
 
-## 5. 目标架构（第 36 课形态）
+## 5. 当前架构与目标架构
+
+### 5.1 当前架构（第 19 课结束）
+
+> 实线是当前真实调用链；虚线是已实现但尚未接入 Runtime 的组件，或本课进行中的组件。
+
+```mermaid
+flowchart TB
+    subgraph 接入层
+        UI[Web UI] --> API["FastAPI /chat<br/>无 session_id"]
+    end
+
+    subgraph 编排层
+        API --> RT[AgentRuntime]
+        RT --> IR[IntentRouter]
+        IR -->|CHAT| CR[ChatResponder]
+        IR -->|TASK| PR[PlanRunner]
+        PR --> PL[TaskPlanner]
+        PR --> EX[TaskPlanExecutor]
+        EX --> SCH[TaskScheduler]
+        SCH --> TR[ToolRunner]
+        TR --> REG[ToolRegistry]
+        CR -->|yield RuntimeEvent| API
+        PR -->|yield RuntimeEvent| API
+    end
+
+    subgraph 已有但未接入
+        CB[ContextBuilder]
+        SR[StateRenderer]
+        SS[StateService]
+        SE[StateExtractor]
+        ST[(SQLite StateStore)]
+        UP["TurnStateUpdater<br/>已实现未接入"]
+        MTL["ModelToolLoop<br/>当前未使用"]
+    end
+
+    RT -. 未接入 .-> CB
+    RT -. 未接入 .-> SS
+    CR -. 未接入 .-> CB
+    PL -. 未接入 .-> CB
+    CB --> SR
+    SS --> ST
+    UP -. 调用 .-> SE
+    UP -. 调用 .-> SS
+```
+
+当前实际上还没有“统一上下文入口”：
+
+- `ChatResponder` 自己拼 `system + user`；
+- `TaskPlanner` 自己拼 `system + user`；
+- `PlanRunner` 自己拼最终回答的 messages；
+- `ContextBuilder` 只在测试和冒烟脚本里使用；
+- `StateService` / `StateExtractor` 还没有接进 Runtime；
+- `TurnStateUpdater` 已实现，但还没有接进 Runtime。
+
+当前与目标架构的主要差异：
+
+| 目标边 | 当前状态 |
+|---|---|
+| `RT -> ContextBuilder` | 未接入 |
+| `RT -> StateExtractor -> StateService` | 未接入；第 19 课做回合协调 |
+| `ContextBuilder -> Summarizer` | 不成立；builder 只接收已生成的 `RollingSummary` |
+| `RT -> ModelToolLoop -> TaskPlanner` | 实际走 `PlanRunner -> TaskPlanner`；`ModelToolLoop` 未被引用 |
+| `RT/SCH/TR -> EventBus` | 未实现；`RuntimeEvent` 直接 yield 给 SSE |
+| `CB -> History` | 未实现；第 20 课加历史存储 |
+
+### 5.2 目标架构（第 36 课形态）
 
 ```mermaid
 flowchart TB
@@ -197,7 +264,7 @@ flowchart TB
     EVAL --> RT
 ```
 
-### 分层职责
+### 5.3 分层职责
 
 | 层 | 职责 | 主要课程 |
 |---|---|---|
@@ -208,7 +275,7 @@ flowchart TB
 | 工具层 | 注册、执行、Skill、MCP、审批 | 1、26-29 |
 | 基础设施 | 事件总线、追踪、指标、评测、存储 | 30-33 |
 
-### 一次请求的数据流
+### 5.4 一次请求的数据流
 
 1. 请求进入 API，携带 `session_id` / `user_id`。
 2. Runtime 载入会话状态、历史、摘要，`ContextBuilder` 在 token 预算内组装上下文。
@@ -260,6 +327,7 @@ agent-runtime/
 │   ├── store.py                   # 第 14 课
 │   ├── session.py                 # 第 15 课
 │   ├── service.py                 # 第 16 课
+│   ├── updater.py                 # 第 19 课
 │   └── history.py                 # 第 20 课
 ├── tools/
 │   ├── registry.py
@@ -378,5 +446,6 @@ agent-runtime/
 - Goal ID 升级已完成：`Goal.id` + `ensure_goal_ids()` + `goals_complete/abandon` 使用 ID。
 - 第 17 课已完成：`context/renderer.py` 提供 `StateRenderer`，把状态按 section 渲染进 token 预算。
 - 第 18 课已完成：`context/builder.py` 提供 `ContextBuilder`，把 system prompt、状态、摘要和历史组装成预算内 messages。
-- 下一步第 19 课：把回合后的状态提取接进对话流程。
+- 第 19 课已完成：`state/updater.py` 提供 `TurnStateUpdater`，支持回合后提取、异步更新、幂等和版本校验。
+- 下一步第 20 课：统一历史、摘要与状态快照的持久化。
 - 如果需要，我可以补写 `lesson1.md` ~ `lesson4.md` 作为复习与验收文档（代码已完成，主要用于巩固和查漏）。

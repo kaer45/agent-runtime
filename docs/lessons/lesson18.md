@@ -694,6 +694,29 @@ def test_build_does_not_mutate_the_input_history():
 
 ---
 
+### 6.2 每个测试防什么
+
+| 测试 | 主要防止的回归 |
+|---|---|
+| `test_without_state_and_history_builds_two_messages` | 没有状态/历史时多塞空 system、空摘要或多余消息 |
+| `test_state_is_appended_to_the_single_system_message` | 把状态另起一条 system，或塞进 user，导致角色和指令优先级错误 |
+| `test_state_renderer_honors_its_own_budget` | 忘记把 `state_max_tokens` 传给渲染器，状态过大挤掉历史/当前问题 |
+| `test_summary_is_inserted_as_a_read_only_block` | 摘要裸文本直接拼入 system，没有只读边界，容易被当成指令 |
+| `test_summary_accepts_plain_text` | builder 只接受 `RollingSummary`，传字符串就崩 |
+| `test_empty_summary_is_omitted` | 空摘要仍输出标题，白占 token |
+| `test_history_stays_in_order_before_the_current_user` | 历史被放到当前 user 后面，模型注意力错位，最新 user 保护失效 |
+| `test_budget_drops_the_oldest_history_first` | 没调用 `fit()`，或裁剪顺序错误，丢掉最新历史/当前问题 |
+| `test_mandatory_system_over_budget_raises` | 必保留块超预算时静默丢 system，导致人设和安全边界消失 |
+| `test_history_rejects_another_system_message` | history 里再带 system，出现多 system，破坏单 system 约定 |
+| `test_state_must_be_session_state` | 把 dict 当状态传入，渲染器内部才崩，错误边界太晚 |
+| `test_summary_must_be_rolling_summary_or_text` | 任意对象被传进来，直到访问 `.text` 才报错 |
+| `test_invalid_state_max_tokens_is_rejected` | 0/负数预算进入渲染器，产生不可预期的截断 |
+| `test_build_does_not_mutate_the_input_history` | builder 原地 append/排序调用方 history，污染调用方数据 |
+
+其中 `test_budget_drops_the_oldest_history_first` 里的 `final_tokens == 62`
+是刻意的硬编码：它锁定了“消息开销也计入总预算”这一口径。修改
+`SYSTEM` 或历史长度时，这个数字需要同步调整。
+
 ## 7. 冒烟脚本
 
 ### 7.1 `scripts/lesson18_smoke.py`
