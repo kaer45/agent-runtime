@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -105,7 +109,8 @@ class ContextBuilder:
 
         result: BudgetResult = self.budget.fit(messages)
 
-        return BuiltContext(
+
+        built = BuiltContext(
             messages=result.messages,
             rendered_state=rendered_state,
             summary_tokens=summary_tokens,
@@ -113,6 +118,15 @@ class ContextBuilder:
             final_tokens=result.final_tokens,
             dropped_indices=result.dropped_indices,
         )
+
+        logger.debug(
+            "context built: state=%d summary=%d original=%d final=%d dropped=%s",
+            built.state_tokens, built.summary_tokens,
+            built.original_tokens, built.final_tokens,
+            built.dropped_indices,
+        )
+
+        return built
 
     def _system_content(
         self,
