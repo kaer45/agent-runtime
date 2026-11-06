@@ -66,6 +66,17 @@ def test_state_renderer_honors_its_own_budget():
     assert built.messages[0]["content"].endswith("...")
 
 
+def test_build_can_override_state_max_tokens():
+    built = make_builder(state_max_tokens=100).build(
+        "现在买什么",
+        state=make_state(),
+        state_max_tokens=25,
+    )
+
+    assert built.rendered_state is not None
+    assert built.rendered_state.truncated is True
+
+
 def test_summary_is_inserted_as_a_read_only_block():
     summary = RollingSummary(text="用户喜欢干型酒", covered_messages=2)
 
@@ -120,6 +131,8 @@ def test_budget_drops_the_oldest_history_first():
         {"role": "user", "content": "now"},
     ]
     assert built.dropped_indices == (1,)
+    assert built.dropped_history_indices == (0,)
+    assert built.dropped_messages == [history[0]]
     assert built.final_tokens == 62
     assert built.truncated is True
 
