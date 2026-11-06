@@ -28,7 +28,7 @@
 
 ## 2. 起点与目标形态
 
-**当前起点（第 19 课结束）**
+**当前起点（第 20 课结束，20.5 设计已准备）**
 
 - 已有：`ToolRegistry` / `ToolRunner` / 事件模型 / `TaskPlan` / `TaskDAG` / `TaskConverter` / `TaskScheduler`
 - 已有：`TaskPlanner` / `PlanRunner` / `IntentRouter` / `ChatResponder`，能分流聊天与任务
@@ -41,7 +41,7 @@
 - 已有：`StateRenderer`，按 section 优先级把状态渲染进预算
 - 已有：`ContextBuilder`，把 system prompt、状态、摘要和历史组装成 messages
 - 已有：`TurnStateUpdater`，回合后串行、幂等地提取并应用状态
-- 测试：217 个用例通过
+- 测试：256 个用例通过
 - 缺口：可靠性、工具生态、可观测未开始
 
 **第 36 课目标形态**
@@ -115,7 +115,9 @@
 | 17 | 状态接入模型上下文 | `StateRenderer` + 预算内注入 | ✅ |
 | 18 | 上下文接入 Runtime | `ContextBuilder` 组装 messages | ✅ |
 | 19 | 状态更新接入对话流程 | 回合后提取、异步更新、幂等 | ✅ |
-| 20 | 统一历史管理与持久化 | 消息/摘要/状态快照统一存储与保留策略 | ⬜ |
+| 20 | 统一历史管理与持久化 | 消息/摘要/状态快照统一存储与保留策略 | ✅ |
+| 20.5 | 组件接入设计（加餐） | `TurnOrchestrator` 契约、时序与测试计划 | 🟡 |
+| 20.6 | 组件接入 Runtime（加餐） | session_id + 聊天链路接线 | ⬜ |
 | 21 | 任务状态机 | 显式 FSM + 合法转换守卫 | ⬜ |
 | 22 | DAG 校验与死锁检测 | 预检：环、不可达、无进展、超时 | ⬜ |
 | 23 | 安全重试与幂等 | 错误分类、退避、幂等键 | ⬜ |
@@ -165,11 +167,13 @@ flowchart TB
 
     subgraph 已有但未接入
         CB[ContextBuilder]
+        CP[ContextPlanner]
         SR[StateRenderer]
         SS[StateService]
         SE[StateExtractor]
         ST[(SQLite StateStore)]
         UP["TurnStateUpdater<br/>已实现未接入"]
+        HS["HistoryStore<br/>已实现未接入"]
         MTL["ModelToolLoop<br/>当前未使用"]
     end
 
@@ -178,9 +182,12 @@ flowchart TB
     CR -. 未接入 .-> CB
     PL -. 未接入 .-> CB
     CB --> SR
+    CP -. 预算 .-> CB
     SS --> ST
     UP -. 调用 .-> SE
     UP -. 调用 .-> SS
+    HS -. 共用 SQLite .-> ST
+    CB -. 读取 .-> HS
 ```
 
 当前实际上还没有“统一上下文入口”：
@@ -201,7 +208,7 @@ flowchart TB
 | `ContextBuilder -> Summarizer` | 不成立；builder 只接收已生成的 `RollingSummary` |
 | `RT -> ModelToolLoop -> TaskPlanner` | 实际走 `PlanRunner -> TaskPlanner`；`ModelToolLoop` 未被引用 |
 | `RT/SCH/TR -> EventBus` | 未实现；`RuntimeEvent` 直接 yield 给 SSE |
-| `CB -> History` | 未实现；第 20 课加历史存储 |
+| `CB -> History` | `HistoryStore` 已实现；尚未接入 |
 
 ### 5.2 目标架构（第 36 课形态）
 
@@ -320,15 +327,16 @@ agent-runtime/
 │   ├── budget.py                  # 第 10 课
 │   ├── summarizer.py              # 第 11 课
 │   ├── renderer.py                # 第 17 课
-│   └── builder.py                 # 第 18 课
+│   ├── builder.py                 # 第 18 课
+│   ├── history.py                 # 第 20 课
+│   └── planner.py                 # 第 20 课
 ├── state/
 │   ├── models.py                  # 第 12 课
 │   ├── extractor.py               # 第 13 课
 │   ├── store.py                   # 第 14 课
 │   ├── session.py                 # 第 15 课
 │   ├── service.py                 # 第 16 课
-│   ├── updater.py                 # 第 19 课
-│   └── history.py                 # 第 20 课
+│   └── updater.py                 # 第 19 课
 ├── tools/
 │   ├── registry.py
 │   ├── catalog.py                 # 第 8 课
@@ -447,5 +455,7 @@ agent-runtime/
 - 第 17 课已完成：`context/renderer.py` 提供 `StateRenderer`，把状态按 section 渲染进 token 预算。
 - 第 18 课已完成：`context/builder.py` 提供 `ContextBuilder`，把 system prompt、状态、摘要和历史组装成预算内 messages。
 - 第 19 课已完成：`state/updater.py` 提供 `TurnStateUpdater`，支持回合后提取、异步更新、幂等和版本校验。
-- 下一步第 20 课：统一历史、摘要与状态快照的持久化。
+- 第 20 课已完成：`context/history.py` 提供 `HistoryStore`（coverage 可领先删除），`context/planner.py` 提供 `ContextPlanner`（固定配额、预裁剪历史）。
+- 第 20.5 课设计文档已准备好：先读 [lesson20_5.md](lesson20_5.md)，明确 `TurnOrchestrator`、session_id、写入顺序和测试计划。
+- 下一步第 20.6 课：把聊天链路接进 `AgentRuntime`；之后再回到第 21 课任务状态机。
 - 如果需要，我可以补写 `lesson1.md` ~ `lesson4.md` 作为复习与验收文档（代码已完成，主要用于巩固和查漏）。
