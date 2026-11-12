@@ -1,5 +1,6 @@
 import json
 import logging
+import uuid
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -43,12 +44,13 @@ async def index():
 
 
 @app.get("/chat")
-async def chat(message: str):
+async def chat(message: str, session_id: str | None = None):
     """SSE 接口：接收用户输入，流式返回 Agent 事件。"""
-    
+    session_id = (session_id or "").strip() or f"s_{uuid.uuid4().hex}"
+
     async def event_generator():
         try:
-            async for event in runtime.run(message):
+            async for event in runtime.run(message, session_id=session_id):
                 # 将 RuntimeEvent 转换为 SSE 要求的格式
                 data = json.dumps(event.to_dict(), ensure_ascii=False)
                 yield f"data: {data}\n\n"
@@ -66,7 +68,8 @@ async def chat(message: str):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"  # 防止 Nginx 等反向代理缓冲
+            "X-Accel-Buffering": "no",  # 防止 Nginx 等反向代理缓冲
+            "X-Session-Id": session_id,
         }
     )
 

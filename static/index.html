@@ -753,8 +753,35 @@
         // SSE
         // ==================================================
 
+        const sessionId =
+            localStorage.getItem(
+                "agent_session_id"
+            )
+            ||
+            (
+                "web-"
+                +
+                (
+                    crypto.randomUUID
+                        ? crypto.randomUUID()
+                        : Date.now()
+                )
+            );
+
+        localStorage.setItem(
+            "agent_session_id",
+            sessionId
+        );
+
+
         const url =
-            "/chat?message="
+            "/chat?session_id="
+            +
+            encodeURIComponent(
+                sessionId
+            )
+            +
+            "&message="
             +
             encodeURIComponent(
                 message

@@ -1,4 +1,6 @@
 import asyncio
+import tempfile
+from pathlib import Path
 from typing import Literal
 
 import pytest
@@ -206,10 +208,20 @@ def test_planner_and_router_can_share_one_catalog(registry):
 
 
 def test_runtime_shares_one_catalog_between_planner_and_router():
-    runtime = AgentRuntime(llm=FakeLLM([]))
+    with tempfile.NamedTemporaryFile(
+        dir=Path.cwd(),
+        prefix="runtime-catalog-",
+        suffix=".db",
+        delete=False,
+    ) as handle:
+        db_path = Path(handle.name)
 
-    assert runtime.task_runner.planner.catalog is runtime.catalog
-    assert runtime.router.catalog is runtime.catalog
+    try:
+        runtime = AgentRuntime(llm=FakeLLM([]), db_path=db_path)
+        assert runtime.task_runner.planner.catalog is runtime.catalog
+        assert runtime.router.catalog is runtime.catalog
+    finally:
+        db_path.unlink(missing_ok=True)
 
 
 def test_catalog_fingerprint_is_stable(catalog):

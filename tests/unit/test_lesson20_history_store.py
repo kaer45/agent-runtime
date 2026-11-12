@@ -1,4 +1,6 @@
+import sqlite3
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -370,6 +372,78 @@ def test_load_limit_returns_latest_messages_in_order(store):
 
     assert [message["content"] for message in snapshot.messages] == ["2", "3"]
     assert len(snapshot.message_ids) == 2
+
+
+def test_append_once_is_idempotent_per_turn(store):
+    messages = sample_messages()
+
+    assert store.append_once("session-1", "turn-1", messages) is True
+    assert store.append_once("session-1", "turn-1", messages) is False
+
+    snapshot = store.load("session-1")
+    assert snapshot.messages == messages
+    assert store.count("session-1") == 2
+
+    # 不同 turn 仍可追加。
+    assert store.append_once(
+        "session-1",
+        "turn-2",
+        [{"role": "user", "content": "第二轮"}],
+    ) is True
+    assert store.count("session-1") == 3
+
+
+def test_append_once_same_turn_is_scoped_by_session(store):
+    message = [{"role": "user", "content": "你好"}]
+
+    assert store.append_once("session-1", "turn-1", message) is True
+    assert store.append_once("session-2", "turn-1", message) is True
+    assert store.count("session-1") == 1
+    assert store.count("session-2") == 1
+
+
+def test_append_once_rolls_back_turn_marker_on_message_failure(store):
+    bad_messages = [
+        {"role": "user", "content": {"not": "json-serializable", "value": {1, 2}}},
+    ]
+
+    with pytest.raises(HistoryStoreError):
+        store.append_once("session-1", "turn-1", bad_messages)
+
+    assert store.count("session-1") == 0
+    assert store.append_once(
+        "session-1",
+        "turn-1",
+        [{"role": "user", "content": "重试成功"}],
+    ) is True
+
+
+def test_append_once_retries_transient_lock(store, monkeypatch):
+    real_connection = store._connection
+    calls = {"count": 0}
+
+    @contextmanager
+    def flaky_connection():
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise sqlite3.OperationalError("database is locked")
+        with real_connection() as conn:
+            yield conn
+
+    monkeypatch.setattr(store, "_connection", flaky_connection)
+
+    assert store.append_once(
+        "session-1",
+        "turn-1",
+        [{"role": "user", "content": "重试"}],
+    ) is True
+    assert calls["count"] == 2
+    assert store.count("session-1") == 1
+
+
+def test_append_once_rejects_blank_turn_id(store):
+    with pytest.raises(ValueError, match="turn_id"):
+        store.append_once("session-1", "  ", sample_messages())
 
 
 def test_clear_removes_messages_summary_and_coverage(store):

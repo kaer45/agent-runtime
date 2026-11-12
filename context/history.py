@@ -1,6 +1,6 @@
 """按会话持久化消息历史与滚动摘要。
 
-状态快照由 ``StateStore`` 保存，本模块只保存消息流水账和摘要；
+状态快照由 ``StateStore`` 保存，本模块只保存消息流水账、摘要和回合幂等标记；
 两者可以共用同一个 SQLite 文件，但表和维护职责分开。
 
 ``covered_through_id`` 是“摘要覆盖水位线”：
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -41,6 +42,15 @@ CREATE TABLE IF NOT EXISTS session_summaries (
     summary_json TEXT NOT NULL,
     covered_through_id INTEGER,
     updated_at TEXT NOT NULL
+)
+"""
+
+_SCHEMA_TURNS = """
+CREATE TABLE IF NOT EXISTS session_turns (
+    session_id TEXT NOT NULL,
+    turn_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (session_id, turn_id)
 )
 """
 
@@ -117,6 +127,7 @@ class HistoryStore:
                 conn.execute(_SCHEMA_MESSAGES)
                 conn.execute(_SCHEMA_MESSAGE_INDEX)
                 conn.execute(_SCHEMA_SUMMARIES)
+                conn.execute(_SCHEMA_TURNS)
         except (OSError, sqlite3.Error) as exc:
             raise HistoryStoreError(f"初始化历史库失败：{exc}") from exc
 
@@ -146,6 +157,62 @@ class HistoryStore:
                     )
         except (sqlite3.Error, TypeError, ValueError) as exc:
             raise HistoryStoreError(f"追加历史失败：{exc}") from exc
+
+    def append_once(
+        self,
+        session_id: str,
+        turn_id: str,
+        messages: Sequence[dict],
+    ) -> bool:
+        """幂等追加一轮消息。
+
+        在同一个事务里写入 ``session_turns`` 标记和消息：
+        重复的 ``(session_id, turn_id)`` 返回 ``False``，不会重复写消息。
+
+        对 SQLite 的暂时性锁冲突做有界重试；因为事务和标记是幂等的，
+        重试即使遇到“第一次其实已提交”也不会重复追加。
+        """
+        session_id = self._normalize_session_id(session_id)
+        turn_id = self._normalize_turn_id(turn_id)
+        items = self._normalize_messages(messages)
+
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+        for attempt in range(3):
+            try:
+                with self._connection() as conn:
+                    cursor = conn.execute(
+                        "INSERT INTO session_turns "
+                        "(session_id, turn_id, created_at) "
+                        "VALUES (?, ?, ?) "
+                        "ON CONFLICT(session_id, turn_id) DO NOTHING",
+                        (session_id, turn_id, now),
+                    )
+                    if cursor.rowcount == 0:
+                        return False
+
+                    for message in items:
+                        conn.execute(
+                            "INSERT INTO session_messages "
+                            "(session_id, payload_json, created_at) "
+                            "VALUES (?, ?, ?)",
+                            (
+                                session_id,
+                                json.dumps(message, ensure_ascii=False),
+                                now,
+                            ),
+                        )
+                return True
+            except sqlite3.OperationalError as exc:
+                if not self._is_retryable_lock(exc) or attempt == 2:
+                    raise HistoryStoreError(
+                        f"追加历史失败：{exc}"
+                    ) from exc
+                time.sleep(0.02 * (attempt + 1))
+            except (sqlite3.Error, TypeError, ValueError) as exc:
+                raise HistoryStoreError(f"追加历史失败：{exc}") from exc
+
+        return False
 
     def load(
         self,
@@ -274,7 +341,7 @@ class HistoryStore:
         return int(row[0])
 
     def clear(self, session_id: str) -> bool:
-        """删除会话的消息和摘要；返回是否删除了任何内容。"""
+        """删除会话的消息、摘要和 turn 标记；返回是否删除了任何内容。"""
         session_id = self._normalize_session_id(session_id)
         try:
             with self._connection() as conn:
@@ -286,9 +353,13 @@ class HistoryStore:
                     "DELETE FROM session_summaries WHERE session_id = ?",
                     (session_id,),
                 ).rowcount
+                turns = conn.execute(
+                    "DELETE FROM session_turns WHERE session_id = ?",
+                    (session_id,),
+                ).rowcount
         except sqlite3.Error as exc:
             raise HistoryStoreError(f"删除历史失败：{exc}") from exc
-        return messages > 0 or summary > 0
+        return messages > 0 or summary > 0 or turns > 0
 
     def plan_trim(
         self,
@@ -512,6 +583,20 @@ class HistoryStore:
         if not session_id:
             raise ValueError("session_id 不能为空")
         return session_id
+
+    @staticmethod
+    def _normalize_turn_id(turn_id: str) -> str:
+        if not isinstance(turn_id, str):
+            raise TypeError("turn_id 必须是字符串")
+        turn_id = turn_id.strip()
+        if not turn_id:
+            raise ValueError("turn_id 不能为空")
+        return turn_id
+
+    @staticmethod
+    def _is_retryable_lock(exc: sqlite3.OperationalError) -> bool:
+        message = str(exc).lower()
+        return "locked" in message or "busy" in message
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:

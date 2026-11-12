@@ -1,5 +1,7 @@
 import asyncio
 import json
+import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -24,6 +26,30 @@ def registry():
 def classify(intent: str, call_id: str = "call_1") -> FakeToolCall:
     arguments = json.dumps({"intent": intent, "reason": "test"}, ensure_ascii=False)
     return FakeToolCall(name="classify_intent", arguments=arguments, call_id=call_id)
+
+
+def state_delta(**payload) -> FakeToolCall:
+    return FakeToolCall(
+        name="submit_state_delta",
+        arguments=json.dumps(payload, ensure_ascii=False),
+        call_id="state-1",
+    )
+
+
+@pytest.fixture
+def runtime_db():
+    with tempfile.NamedTemporaryFile(
+        dir=Path.cwd(),
+        prefix="runtime-routing-",
+        suffix=".db",
+        delete=False,
+    ) as handle:
+        db_path = Path(handle.name)
+
+    try:
+        yield db_path
+    finally:
+        db_path.unlink(missing_ok=True)
 
 
 async def collect(events):
@@ -151,12 +177,13 @@ def test_chat_responder_error_ends_run():
     assert "boom" in events[-1].data["error"]
 
 
-def test_runtime_routes_chat():
+def test_runtime_routes_chat(runtime_db):
     llm = FakeLLM([
         FakeMessage(tool_calls=[classify("chat")]),
         FakeMessage(content="曹操的儿子有曹昂、曹丕、曹植等。"),
+        FakeMessage(tool_calls=[state_delta(preferences_set={"style": "dry"})]),
     ])
-    runtime = AgentRuntime(llm=llm)
+    runtime = AgentRuntime(llm=llm, db_path=runtime_db)
 
     events = asyncio.run(collect(runtime.run("曹操的儿子叫什么")))
 
@@ -174,9 +201,10 @@ def test_runtime_routes_chat():
     }
     assert "曹昂" in events[2].data["content"]
     assert len({e.run_id for e in events}) == 1
-    assert len(llm.calls) == 2
+    assert len(llm.calls) == 3
     assert llm.calls[0]["tools"] == [INTENT_TOOL]
     assert llm.calls[1]["tools"] is None
+    assert llm.calls[2]["tools"] is not None
 
 
 class FakeRunner:
@@ -195,9 +223,9 @@ class FakeRunner:
         yield RuntimeEvent(EventType.RUN_FINISHED, run_id or "fake")
 
 
-def test_runtime_routes_task():
+def test_runtime_routes_task(runtime_db):
     llm = FakeLLM([FakeMessage(tool_calls=[classify("task")])])
-    runtime = AgentRuntime(llm=llm)
+    runtime = AgentRuntime(llm=llm, db_path=runtime_db)
     task_runner = FakeRunner("任务回答")
     chat_runner = FakeRunner("聊天回答")
     runtime.task_runner = task_runner
@@ -220,9 +248,12 @@ def test_runtime_routes_task():
     assert len(llm.calls) == 1
 
 
-def test_runtime_rule_shortcut_skips_classifier():
-    llm = FakeLLM([FakeMessage(content="你好！有什么可以帮你？")])
-    runtime = AgentRuntime(llm=llm)
+def test_runtime_rule_shortcut_skips_classifier(runtime_db):
+    llm = FakeLLM([
+        FakeMessage(content="你好！有什么可以帮你？"),
+        FakeMessage(tool_calls=[state_delta()]),
+    ])
+    runtime = AgentRuntime(llm=llm, db_path=runtime_db)
 
     events = asyncio.run(collect(runtime.run("你好")))
 
@@ -238,6 +269,7 @@ def test_runtime_rule_shortcut_skips_classifier():
         "rule": "greeting",
         "reason": "",
     }
-    assert len(llm.calls) == 1
+    assert len(llm.calls) == 2
     assert llm.calls[0]["tools"] is None
+    assert llm.calls[1]["tools"] is not None
     assert len({e.run_id for e in events}) == 1

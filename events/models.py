@@ -25,6 +25,9 @@ class EventType(str, Enum):
     TOOL_STARTED = "tool_started"
     TOOL_SUCCESS = "tool_success"
     TOOL_FAILED = "tool_failed"
+
+    # 回合后的非致命持久化错误
+    STATE_UPDATE_FAILED = "state_update_failed"
     
     FINAL_ANSWER = "final_answer"
 
@@ -36,6 +39,7 @@ class RuntimeEvent:
     run_id: str
     task_id: str | None = None
     data: dict[str, Any] = field(default_factory=dict)
+    session_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """序列化为字典，方便转换为 JSON。"""
@@ -43,5 +47,6 @@ class RuntimeEvent:
             "type": self.type.value,
             "run_id": self.run_id,
             "task_id": self.task_id,
+            "session_id": self.session_id,
             "data": self.data,
         }
