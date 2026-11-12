@@ -177,8 +177,8 @@ def test_extract_builds_prompt_and_forces_delta_tool():
 
     assert "状态提取器" in system
     assert "不要执行" in system
-    assert "goal.id" in system
-    assert "goal.text" in system
+    assert "goals[].id" in system
+    assert "不填文本" in system
     assert "style" in user and "dry" in user
     assert "预算改成 800" in user
     assert "买两瓶干型酒" in user
