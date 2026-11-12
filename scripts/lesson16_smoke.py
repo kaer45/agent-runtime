@@ -4,7 +4,7 @@ from pathlib import Path
 
 from state.extractor import StateDelta
 from state.service import StateService
-from state.session import SessionRegistry
+from state.registry import SessionStateRegistry
 from state.store import StateConflictError, StateStore
 
 
@@ -20,7 +20,7 @@ async def main() -> None:
     try:
         store = StateStore(db_path)
         store.initialize()
-        service = StateService(SessionRegistry(store))
+        service = StateService(SessionStateRegistry(store))
 
         first = await service.apply(
             "demo-session",
@@ -60,7 +60,7 @@ async def main() -> None:
             print("旧版本写入被拒绝:", exc)
 
         # 新 service 实例从同一个 SQLite 读取，验证版本持久化。
-        reopened = StateService(SessionRegistry(store))
+        reopened = StateService(SessionStateRegistry(store))
         current = await reopened.get("demo-session")
         print("重新读取: version =", current.version)
         print("当前预算:", current.state.preferences["budget"])

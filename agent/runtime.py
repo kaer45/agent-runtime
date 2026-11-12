@@ -16,7 +16,7 @@ from context.planner import ContextPlanner
 from context.summarizer import HistorySummarizer
 from state.extractor import StateExtractor
 from state.service import StateService
-from state.session import SessionRegistry
+from state.registry import SessionStateRegistry
 from state.store import StateStore
 from state.updater import TurnStateUpdater
 from tasks.plan_executor import TaskPlanExecutor
@@ -113,7 +113,7 @@ class AgentRuntime:
         )
         self.history_store.initialize()
 
-        self.state_service = StateService(SessionRegistry(self.state_store))
+        self.state_service = StateService(SessionStateRegistry(self.state_store))
         budget = TokenBudget(
             max_tokens=CHAT_MAX_TOKENS,
             reserve_output=CHAT_RESERVE_OUTPUT,

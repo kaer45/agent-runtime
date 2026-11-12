@@ -5,7 +5,7 @@ from pathlib import Path
 from state.extractor import StateDelta
 from state.models import SessionState
 from state.service import StateService
-from state.session import SessionRegistry
+from state.registry import SessionStateRegistry
 from state.store import StateStore
 from state.updater import TurnStateUpdater
 
@@ -32,7 +32,7 @@ async def main() -> None:
 
     store = StateStore(db_path)
     store.initialize()
-    service = StateService(SessionRegistry(store))
+    service = StateService(SessionStateRegistry(store))
     extractor = FakeExtractor(
         [
             StateDelta(

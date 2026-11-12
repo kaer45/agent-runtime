@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from state.models import SessionState
-from state.session import SessionRegistry
-from state.store import StateStore
+from state.registry import SessionStateRegistry
+from state.store import StateSnapshot, StateStore
 
 
 def sample_state(budget: int = 500) -> SessionState:
@@ -20,7 +20,7 @@ def sample_state(budget: int = 500) -> SessionState:
 
 
 @pytest.fixture
-def registry() -> SessionRegistry:
+def registry() -> SessionStateRegistry:
     with tempfile.NamedTemporaryFile(
         dir=Path.cwd(),
         prefix="lesson15-",
@@ -33,42 +33,76 @@ def registry() -> SessionRegistry:
     store.initialize()
 
     try:
-        yield SessionRegistry(store)
+        yield SessionStateRegistry(store)
     finally:
         db_path.unlink(missing_ok=True)
 
 
 def test_sessions_are_isolated(registry):
-    registry.save("session-a", sample_state(budget=500))
-    registry.save("session-b", sample_state(budget=800))
+    registry.save_snapshot(
+        "session-a",
+        sample_state(budget=500),
+        expected_version=0,
+    )
+    registry.save_snapshot(
+        "session-b",
+        sample_state(budget=800),
+        expected_version=0,
+    )
 
-    assert registry.load("session-a").preferences["budget"] == 500
-    assert registry.load("session-b").preferences["budget"] == 800
+    snapshot_a = registry.load_snapshot("session-a")
+    snapshot_b = registry.load_snapshot("session-b")
+    assert snapshot_a is not None
+    assert snapshot_b is not None
+    assert snapshot_a.state.preferences["budget"] == 500
+    assert snapshot_b.state.preferences["budget"] == 800
 
 
-def test_missing_session_returns_empty_state(registry):
+def test_missing_session_returns_none(registry):
     assert registry.exists("missing") is False
-    assert registry.load("missing") == SessionState()
+    assert registry.load_snapshot("missing") is None
 
 
 def test_delete_removes_session_state(registry):
-    registry.save("session-a", sample_state())
+    registry.save_snapshot(
+        "session-a",
+        sample_state(),
+        expected_version=0,
+    )
 
     assert registry.delete("session-a") is True
     assert registry.delete("session-a") is False
     assert registry.exists("session-a") is False
-    assert registry.load("session-a") == SessionState()
+    assert registry.load_snapshot("session-a") is None
+
+
+def test_snapshot_carries_version(registry):
+    version = registry.save_snapshot(
+        "session-a",
+        sample_state(),
+        expected_version=0,
+    )
+
+    snapshot = registry.load_snapshot("session-a")
+    assert snapshot is not None
+    assert version == 1
+    assert snapshot.version == 1
 
 
 def test_load_returns_independent_state_objects(registry):
-    registry.save("session-a", sample_state(budget=500))
+    registry.save_snapshot(
+        "session-a",
+        sample_state(budget=500),
+        expected_version=0,
+    )
 
-    first = registry.load("session-a")
-    first.preferences["budget"] = 999
+    first = registry.load_snapshot("session-a")
+    assert first is not None
+    first.state.preferences["budget"] = 999
 
-    second = registry.load("session-a")
-
-    assert second.preferences["budget"] == 500
+    second = registry.load_snapshot("session-a")
+    assert second is not None
+    assert second.state.preferences["budget"] == 500
 
 
 def test_same_session_lock_is_reused(registry):
@@ -86,19 +120,32 @@ def test_same_session_lock_is_reused(registry):
 def test_same_session_updates_are_serialized(registry):
     async def increment() -> None:
         async with registry.acquire("session-a"):
-            state = registry.load("session-a")
+            snapshot = registry.load_snapshot("session-a")
+            current = snapshot or StateSnapshot(
+                state=SessionState(),
+                version=0,
+            )
+            state = current.state
             count = state.preferences.get("count", 0)
+
             # 故意让出事件循环，放大“读-改-写”竞争。
             await asyncio.sleep(0.01)
             state.preferences["count"] = count + 1
-            registry.save("session-a", state)
+
+            registry.save_snapshot(
+                "session-a",
+                state,
+                expected_version=current.version,
+            )
 
     async def main() -> None:
         await asyncio.gather(*(increment() for _ in range(10)))
 
     asyncio.run(main())
 
-    assert registry.load("session-a").preferences["count"] == 10
+    snapshot = registry.load_snapshot("session-a")
+    assert snapshot is not None
+    assert snapshot.state.preferences["count"] == 10
 
 
 def test_different_sessions_do_not_block_each_other(registry):
@@ -129,33 +176,17 @@ def test_different_sessions_do_not_block_each_other(registry):
     asyncio.run(main())
 
 
-def test_update_runs_under_session_lock(registry):
-    def mutate(state: SessionState) -> SessionState:
-        state.preferences["style"] = "dry"
-        return state
-
-    result = asyncio.run(registry.update("session-a", mutate))
-
-    assert result.preferences["style"] == "dry"
-    assert registry.load("session-a").preferences["style"] == "dry"
-
-
-def test_update_rejects_non_state_result(registry):
-    with pytest.raises(TypeError, match="SessionState"):
-        asyncio.run(
-            registry.update("session-a", lambda state: {"preferences": {}})
-        )
-
-    assert registry.load("session-a") == SessionState()
-
-
 @pytest.mark.parametrize("session_id", ["", "   "])
 def test_blank_session_id_is_rejected(registry, session_id):
     with pytest.raises(ValueError, match="session_id"):
-        registry.load(session_id)
+        registry.load_snapshot(session_id)
 
     with pytest.raises(ValueError, match="session_id"):
-        registry.save(session_id, sample_state())
+        registry.save_snapshot(
+            session_id,
+            sample_state(),
+            expected_version=0,
+        )
 
     with pytest.raises(ValueError, match="session_id"):
         registry.exists(session_id)
@@ -165,6 +196,3 @@ def test_blank_session_id_is_rejected(registry, session_id):
 
     with pytest.raises(ValueError, match="session_id"):
         asyncio.run(registry.lock(session_id))
-
-    with pytest.raises(ValueError, match="session_id"):
-        asyncio.run(registry.update(session_id, lambda state: state))

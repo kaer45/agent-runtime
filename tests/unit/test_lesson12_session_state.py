@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from state.models import Goal, GoalStatus, SessionState
+from state.models import Goal, GoalStatus, SessionState, is_valid_goal_id
 
 
 def test_session_state_defaults_are_empty():
@@ -63,14 +63,23 @@ def test_unknown_field_is_rejected():
         SessionState(unknown_field="x")
 
 
-def test_goal_id_defaults_empty_and_legacy_state_loads():
-    assert Goal(text="买酒").id == ""
+def test_goal_id_is_generated_at_creation():
+    goal = Goal(text="买酒")
+
+    assert is_valid_goal_id(goal.id)
 
     state = SessionState.model_validate(
         {"goals": [{"text": "买酒"}, {"text": "买酒杯"}]}
     )
 
-    assert [goal.id for goal in state.goals] == ["", ""]
+    ids = [goal.id for goal in state.goals]
+    assert all(is_valid_goal_id(goal_id) for goal_id in ids)
+    assert len(ids) == len(set(ids))
+
+
+def test_empty_goal_id_is_rejected():
+    with pytest.raises(ValidationError):
+        Goal(id="", text="买酒")
 
 
 def test_goal_id_format_is_validated():
@@ -118,12 +127,13 @@ def test_state_round_trips_through_json():
 
 
 def test_goal_mark_done():
-    goal = Goal(id="g_111111111111",text="买酒")
+    goal = Goal(id="g_111111111111", text="买酒")
 
     done = goal.mark_done()
 
-    assert done.status == GoalStatus.DONE
-    assert goal.status == GoalStatus.ACTIVE
+    assert done.status is GoalStatus.DONE
+    assert goal.status is GoalStatus.ACTIVE
+
 
 def test_goal_mark_done_idempotent():
     goal = Goal(
@@ -133,6 +143,7 @@ def test_goal_mark_done_idempotent():
     )
 
     assert goal.mark_done() is goal
+
 
 def test_goal_mark_abandoned():
     goal = Goal(id="g_111111111111", text="买酒")
@@ -152,6 +163,7 @@ def test_goal_mark_abandoned_is_idempotent():
 
     assert goal.mark_abandoned() is goal
 
+
 def test_goal_cannot_complete_abandoned():
     goal = Goal(
         id="g_111111111111",
@@ -159,7 +171,7 @@ def test_goal_cannot_complete_abandoned():
         status=GoalStatus.ABANDONED,
     )
 
-    with pytest.raises(ValueError,match="放弃"):
+    with pytest.raises(ValueError, match="放弃"):
         goal.mark_done()
 
 

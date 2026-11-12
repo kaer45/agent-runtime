@@ -27,7 +27,7 @@ from context.budget import TokenBudget
 from context.builder import ContextBuilder
 from state.extractor import StateExtractor
 from state.service import StateService
-from state.session import SessionRegistry
+from state.registry import SessionStateRegistry
 from state.store import StateStore
 
 
@@ -58,7 +58,7 @@ async def main() -> None:
     store.initialize()
 
     llm = LLM()
-    service = StateService(SessionRegistry(store))
+    service = StateService(SessionStateRegistry(store))
     extractor = StateExtractor(llm)
     builder = ContextBuilder(
         system_prompt=CHAT_SYSTEM_PROMPT,

@@ -6,7 +6,7 @@ from .extractor import (
 )
 from .models import Goal, GoalStatus, SessionState
 from .service import StateApplyError, StateService, apply_delta
-from .session import SessionRegistry, StateMutator
+from .registry import SessionStateRegistry
 from .updater import StateUpdateResult, TurnStateUpdater
 from .store import (
     StateConflictError,
@@ -25,9 +25,8 @@ __all__ = [
     "StateDelta",
     "StateExtractionError",
     "StateExtractor",
-    "StateMutator",
     "StateSnapshot",
-    "SessionRegistry",
+    "SessionStateRegistry",
     "StateService",
     "StateStore",
     "StateStoreError",

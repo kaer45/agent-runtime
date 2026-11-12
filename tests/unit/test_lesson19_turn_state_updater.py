@@ -7,7 +7,7 @@ import pytest
 from state.extractor import StateDelta, StateExtractionError
 from state.models import SessionState
 from state.service import StateService
-from state.session import SessionRegistry
+from state.registry import SessionStateRegistry
 from state.store import StateStore
 from state.updater import StateUpdateResult, TurnStateUpdater
 
@@ -26,7 +26,7 @@ def service() -> StateService:
     store.initialize()
 
     try:
-        yield StateService(SessionRegistry(store))
+        yield StateService(SessionStateRegistry(store))
     finally:
         db_path.unlink(missing_ok=True)
 

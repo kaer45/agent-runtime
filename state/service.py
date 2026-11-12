@@ -1,28 +1,21 @@
 """把 StateDelta 应用到 SessionState，并处理版本与冲突。
 
-``StateStore`` 负责持久化，``SessionRegistry`` 负责同一会话串行化；
+``StateStore`` 负责持久化，``SessionStateRegistry`` 负责同一会话串行化；
 ``StateService`` 负责 delta 的语义校验、状态转换和乐观锁版本检查。
 """
 
 from __future__ import annotations
 
-import uuid
-
 from copy import deepcopy
 
 from state.extractor import StateDelta
-from state.models import Goal, GoalStatus, SessionState
-from state.session import SessionRegistry
+from state.models import Goal, SessionState
+from state.registry import SessionStateRegistry
 from state.store import StateConflictError, StateSnapshot
 
 
 class StateApplyError(ValueError):
     """Delta 无法应用到当前状态（例如目标不存在、状态转换非法）。"""
-
-
-def new_goal_id() -> str:
-    """生成新的目标 ID：g_ + 12 位十六进制。"""
-    return "g_" + uuid.uuid4().hex[:12]
 
 
 def apply_delta(state: SessionState, delta: StateDelta) -> SessionState:
@@ -78,7 +71,7 @@ def apply_delta(state: SessionState, delta: StateDelta) -> SessionState:
         # 幂等去重，让重复 add 静默成功。
         # 下方最终构建SessionState对象返回会触发 model_validate，保证最终数据正确性。
         if text not in goal_texts:
-            goals.append(Goal(id=new_goal_id(), text=text))
+            goals.append(Goal(text=text))
             goal_texts.add(text)
 
     for goal_id in delta.goals_complete:
@@ -110,30 +103,6 @@ def apply_delta(state: SessionState, delta: StateDelta) -> SessionState:
     )
 
 
-def ensure_goal_ids(state: SessionState) -> tuple[SessionState, bool]:
-    """给缺失 ID 的 Goal 补 UUID：不修改传入的 state。"""
-    goals = [goal.model_copy(deep=True) for goal in state.goals]
-    seen = {goal.id for goal in goals if goal.id}
-    changed = False
-
-    for index, goal in enumerate(goals):
-        if goal.id:
-            continue
-
-        new_id = new_goal_id()
-        while new_id in seen:
-            new_id = new_goal_id()
-
-        seen.add(new_id)
-        goals[index] = goal.model_copy(update={"id": new_id})
-        changed = True
-
-    if not changed:
-        return state, False
-
-    return state.model_copy(update={"goals": goals}), True
-
-
 class StateService:
     """带版本和冲突检查的状态服务。
 
@@ -142,29 +111,16 @@ class StateService:
         snapshot = await service.apply("session-1", delta)
     """
 
-    def __init__(self, registry: SessionRegistry):
+    def __init__(self, registry: SessionStateRegistry):
         self.registry = registry
 
     async def get(self, session_id: str) -> StateSnapshot:
         """读取状态快照；不存在的会话返回空状态和版本 0。"""
-        async with self.registry.acquire(session_id):
-            snapshot = self.registry.load_snapshot(session_id)
-            if snapshot is None:
-                return StateSnapshot(state=SessionState(), version=0)
-
-            state, changed = ensure_goal_ids(snapshot.state)
-
-            if not changed:
-                return snapshot
-
-            # 旧数据迁移：把补好的 ID 写回，版本 +1
-            version = self.registry.save_snapshot(
-                session_id=session_id,
-                state=state,
-                expected_version=snapshot.version,
-            )
-
-            return StateSnapshot(state=state, version=version)
+        snapshot = self.registry.load_snapshot(session_id)
+        return snapshot if snapshot is not None else StateSnapshot(
+            state=SessionState(),
+            version=0,
+        )
 
     async def apply(
         self,
@@ -210,30 +166,14 @@ class StateService:
                     f"当前 {current.version}"
                 )
 
-            state, migrated = ensure_goal_ids(current.state)
 
             if delta.is_empty():
-                if not migrated:
-                    return current
-                version = self.registry.save_snapshot(
-                    session_id=session_id,
-                    state=state,
-                    expected_version=current.version,
-                )
-                return StateSnapshot(state=state, version=version)
+                return current
 
-            updated = apply_delta(state, delta)
+            updated = apply_delta(current.state, delta)
 
-            if updated == state:
-                if not migrated:
-                    return current
-
-                version = self.registry.save_snapshot(
-                    session_id,
-                    state,
-                    expected_version=current.version,
-                )
-                return StateSnapshot(state=state, version=version)
+            if updated == current.state:
+                return current
 
             new_version = self.registry.save_snapshot(
                 session_id,

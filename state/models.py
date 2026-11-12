@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import uuid
 
 from enum import Enum
 from typing import Any
@@ -11,6 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 _GOAL_ID_RE = re.compile(r"^g_[0-9a-f]{12}$")
 
+
+def new_goal_id() -> str:
+    """生成新的目标 ID：g_ + 12 位十六进制。"""
+    return "g_" + uuid.uuid4().hex[:12]
 
 def is_valid_goal_id(value: str) -> bool:
     """Goal ID 是否合法：g_ + 12 位小写十六进制。"""
@@ -29,14 +34,14 @@ class Goal(BaseModel):
     # str_strip_whitespace 开启可以把字符串自动去掉首尾空格，这样比较时不会出错。
     model_config = ConfigDict(extra="forbid",str_strip_whitespace=True)
 
-    id: str = ""
+    id: str = Field(default_factory=new_goal_id)
     text : str
     status: GoalStatus = GoalStatus.ACTIVE
 
     @field_validator("id")
     @classmethod
     def validate_id(cls, value: str) -> str:
-        if value and not is_valid_goal_id(value):
+        if not is_valid_goal_id(value):
             raise ValueError("goal.id 格式必须是 g_ + 12 位十六进制")
         return value
 
@@ -86,12 +91,12 @@ class SessionState(BaseModel):
 
     @model_validator(mode="after")
     def validate_state(self):
-        # 这里检查 text 和 id 既兼容旧数据没有 id，同时因为目标文本是大模型生成，所以还是需要检查。
+        # Goal.id 在创建时生成并校验；这里只检查会话内唯一性。
         goal_texts = [goal.text for goal in self.goals]
         if len(goal_texts) != len(set(goal_texts)):
             raise ValueError("goals 中存在重复目标")
 
-        goal_ids = [goal.id for goal in self.goals if goal.id]
+        goal_ids = [goal.id for goal in self.goals]
         if len(goal_ids) != len(set(goal_ids)):
             raise ValueError("goals 中存在重复目标 ID")
 

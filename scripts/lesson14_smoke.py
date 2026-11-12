@@ -26,16 +26,16 @@ def main() -> None:
             facts={"产区": "勃艮第"},
         )
 
-        store.save("demo-session", state)
+        store.save_snapshot("demo-session", state)
 
         # 新建一个 store，证明数据确实落到了 SQLite 文件。
         reopened = StateStore(db_path)
         reopened.initialize()
-        loaded = reopened.load("demo-session")
+        snapshot = reopened.load_snapshot("demo-session")
 
-        print("是否读到状态:", loaded is not None)
-        if loaded is not None:
-            print(loaded.model_dump_json(indent=2))
+        print("是否读到状态:", snapshot is not None)
+        if snapshot is not None:
+            print(snapshot.state.model_dump_json(indent=2))
 
         print("删除前是否存在:", store.exists("demo-session"))
         print("是否删除成功:", store.delete("demo-session"))

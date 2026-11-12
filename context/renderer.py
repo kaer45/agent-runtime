@@ -137,7 +137,7 @@ class StateRenderer:
 
 
     def _format_goal(self, goal: Goal) -> str:
-        goal_id = goal.id or "(no-id)"
+        goal_id = goal.id
         return (
             f"{goal_id} [{goal.status.value}] "
             f"{self._one_line(goal.text)}"

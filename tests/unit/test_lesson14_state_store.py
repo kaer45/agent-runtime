@@ -21,6 +21,11 @@ def sample_state(budget: int = 500) -> SessionState:
     )
 
 
+def load_state(store: StateStore, session_id: str) -> SessionState | None:
+    snapshot = store.load_snapshot(session_id)
+    return snapshot.state if snapshot is not None else None
+
+
 @pytest.fixture
 def db_path() -> Path:
     with tempfile.NamedTemporaryFile(
@@ -48,16 +53,16 @@ def test_initialize_is_idempotent(store):
     store.initialize()
 
     state = sample_state()
-    store.save("session-1", state)
+    store.save_snapshot("session-1", state)
 
-    assert store.load("session-1") == state
+    assert load_state(store, "session-1") == state
 
 
 def test_save_and_load_round_trip(store):
     state = sample_state()
 
-    store.save("session-1", state)
-    loaded = store.load("session-1")
+    store.save_snapshot("session-1", state)
+    loaded = load_state(store, "session-1")
 
     assert loaded == state
     assert loaded.preferences["style"] == "dry"
@@ -67,14 +72,14 @@ def test_save_and_load_round_trip(store):
 
 
 def test_load_unknown_session_returns_none(store):
-    assert store.load("missing") is None
+    assert store.load_snapshot("missing") is None
 
 
 def test_save_overwrites_existing_snapshot(store):
-    store.save("session-1", sample_state(budget=500))
-    store.save("session-1", sample_state(budget=800))
+    store.save_snapshot("session-1", sample_state(budget=500))
+    store.save_snapshot("session-1", sample_state(budget=800))
 
-    loaded = store.load("session-1")
+    loaded = load_state(store, "session-1")
 
     assert loaded is not None
     assert loaded.preferences["budget"] == 800
@@ -83,13 +88,13 @@ def test_save_overwrites_existing_snapshot(store):
 def test_exists_and_delete(store):
     assert store.exists("session-1") is False
 
-    store.save("session-1", sample_state())
+    store.save_snapshot("session-1", sample_state())
     assert store.exists("session-1") is True
 
     assert store.delete("session-1") is True
     assert store.delete("session-1") is False
     assert store.exists("session-1") is False
-    assert store.load("session-1") is None
+    assert store.load_snapshot("session-1") is None
 
 
 def test_state_persists_across_store_instances(db_path):
@@ -97,12 +102,12 @@ def test_state_persists_across_store_instances(db_path):
 
     first = StateStore(db_path)
     first.initialize()
-    first.save("session-1", state)
+    first.save_snapshot("session-1", state)
 
     second = StateStore(db_path)
     second.initialize()
 
-    assert second.load("session-1") == state
+    assert load_state(second, "session-1") == state
 
 
 def test_initialize_creates_parent_directory():
@@ -118,13 +123,43 @@ def test_initialize_creates_parent_directory():
         shutil.rmtree(base, ignore_errors=True)
 
 
+def test_old_schema_without_version_fails_fast(db_path):
+    with closing(sqlite3.connect(db_path)) as conn, conn:
+        conn.execute(
+            "CREATE TABLE session_states ("
+            "session_id TEXT PRIMARY KEY, "
+            "state_json TEXT NOT NULL, "
+            "updated_at TEXT NOT NULL"
+            ")"
+        )
+
+    with pytest.raises(StateStoreError, match="schema"):
+        StateStore(db_path).initialize()
+
+
+def test_legacy_version_zero_row_fails_fast(db_path):
+    store = StateStore(db_path)
+    store.initialize()
+
+    with closing(sqlite3.connect(db_path)) as conn, conn:
+        conn.execute(
+            "INSERT INTO session_states "
+            "(session_id, state_json, updated_at, version) "
+            "VALUES (?, ?, ?, 0)",
+            ("session-1", "{}", "2026-01-01T00:00:00+00:00"),
+        )
+
+    with pytest.raises(StateStoreError, match="version=0"):
+        StateStore(db_path).initialize()
+
+
 @pytest.mark.parametrize("session_id", ["", "   "])
 def test_blank_session_id_is_rejected(store, session_id):
     with pytest.raises(ValueError, match="session_id"):
-        store.save(session_id, sample_state())
+        store.save_snapshot(session_id, sample_state())
 
     with pytest.raises(ValueError, match="session_id"):
-        store.load(session_id)
+        store.load_snapshot(session_id)
 
     with pytest.raises(ValueError, match="session_id"):
         store.exists(session_id)
@@ -135,11 +170,11 @@ def test_blank_session_id_is_rejected(store, session_id):
 
 def test_save_rejects_non_session_state(store):
     with pytest.raises(TypeError, match="SessionState"):
-        store.save("session-1", {"preferences": {"style": "dry"}})
+        store.save_snapshot("session-1", {"preferences": {"style": "dry"}})
 
 
 def test_corrupt_state_json_raises_store_error(store):
-    store.save("session-1", sample_state())
+    store.save_snapshot("session-1", sample_state())
 
     with closing(sqlite3.connect(store.db_path)) as conn, conn:
         conn.execute(
@@ -148,7 +183,7 @@ def test_corrupt_state_json_raises_store_error(store):
         )
 
     with pytest.raises(StateStoreError, match="状态数据损坏"):
-        store.load("session-1")
+        store.load_snapshot("session-1")
 
     with closing(sqlite3.connect(store.db_path)) as conn, conn:
         conn.execute(
@@ -157,4 +192,4 @@ def test_corrupt_state_json_raises_store_error(store):
         )
 
     with pytest.raises(StateStoreError, match="状态数据损坏"):
-        store.load("session-1")
+        store.load_snapshot("session-1")

@@ -17,7 +17,7 @@ from events.models import EventType
 from state.extractor import StateDelta
 from state.models import SessionState
 from state.service import StateService
-from state.session import SessionRegistry
+from state.registry import SessionStateRegistry
 from state.store import StateSnapshot, StateStore
 from state.updater import StateUpdateResult
 from tests.fixtures.fake_llm import FakeLLM, FakeMessage, FakeToolCall
@@ -136,7 +136,7 @@ def parts():
         summary_max_tokens=400,
     )
     orchestrator = TurnOrchestrator(
-        state_service=StateService(SessionRegistry(state_store)),
+        state_service=StateService(SessionStateRegistry(state_store)),
         history_store=history,
         planner=planner,
         builder=builder,

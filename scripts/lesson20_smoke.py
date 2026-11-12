@@ -18,7 +18,7 @@ def main() -> None:
 
     state_store = StateStore(db_path)
     state_store.initialize()
-    state_store.save(
+    state_store.save_snapshot(
         "demo",
         SessionState(
             preferences={"style": "dry", "budget": 800},
@@ -72,9 +72,9 @@ def main() -> None:
 
         reopened_state = StateStore(db_path)
         reopened_state.initialize()
-        state = reopened_state.load("demo")
-        print("state version:", reopened_state.load_snapshot("demo").version)
-        print("state:", state.model_dump_json())
+        state_snapshot = reopened_state.load_snapshot("demo")
+        print("state version:", state_snapshot.version)
+        print("state:", state_snapshot.state.model_dump_json())
 
         print("clear:", history.clear("demo"))
         print("after clear:", history.count("demo"))

@@ -7,7 +7,7 @@ import pytest
 from state.extractor import StateDelta
 from state.models import Goal, GoalStatus, SessionState
 from state.service import StateApplyError, StateService, apply_delta
-from state.session import SessionRegistry
+from state.registry import SessionStateRegistry
 from state.store import StateConflictError, StateStore
 
 
@@ -25,7 +25,7 @@ def service() -> StateService:
     store.initialize()
 
     try:
-        yield StateService(SessionRegistry(store))
+        yield StateService(SessionStateRegistry(store))
     finally:
         db_path.unlink(missing_ok=True)
 
@@ -257,7 +257,7 @@ def test_state_and_version_persist_across_service_instances(service):
             ),
         )
 
-        other = StateService(SessionRegistry(service.registry.store))
+        other = StateService(SessionStateRegistry(service.registry.store))
         snapshot = await other.get("session-1")
 
         assert snapshot.version == 1
@@ -313,39 +313,6 @@ def test_apply_delta_does_not_mutate_input():
     assert updated.goals[0].status is GoalStatus.DONE
 
 
-def test_get_migrates_legacy_goal_ids_once(service):
-    async def main() -> None:
-        legacy = SessionState(goals=[Goal(text="买酒")])
-        service.registry.save("session-1", legacy)
-
-        first = await service.get("session-1")
-        assert first.version == 2
-        assert first.state.goals[0].id.startswith("g_")
-
-        second = await service.get("session-1")
-        assert second.version == 2
-        assert second.state.goals[0].id == first.state.goals[0].id
-
-    asyncio.run(main())
-
-
-def test_apply_migrates_legacy_ids_and_applies_in_one_save(service):
-    async def main() -> None:
-        legacy = SessionState(goals=[Goal(text="买酒")])
-        service.registry.save("session-1", legacy)
-
-        snapshot = await service.apply(
-            "session-1",
-            StateDelta(goals_add=["买酒杯"]),
-        )
-
-        assert snapshot.version == 2
-        assert len(snapshot.state.goals) == 2
-        assert all(goal.id for goal in snapshot.state.goals)
-
-    asyncio.run(main())
-
-
 def test_store_snapshot_save_detects_stale_version(service):
     store = service.registry.store
     state = SessionState(preferences={"style": "dry"})
@@ -355,6 +322,16 @@ def test_store_snapshot_save_detects_stale_version(service):
 
     with pytest.raises(StateConflictError, match="版本冲突"):
         store.save_snapshot("session-1", state, expected_version=1)
+
+
+def test_expected_zero_conflicts_when_session_exists(service):
+    store = service.registry.store
+    state = SessionState(preferences={"style": "dry"})
+
+    assert store.save_snapshot("session-1", state, expected_version=0) == 1
+
+    with pytest.raises(StateConflictError, match="版本冲突"):
+        store.save_snapshot("session-1", state, expected_version=0)
 
 
 def test_blank_session_id_is_rejected(service):

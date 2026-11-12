@@ -464,7 +464,10 @@ def test_clear_removes_messages_summary_and_coverage(store):
 def test_state_and_history_can_share_the_same_database(store):
     state_store = StateStore(store.db_path)
     state_store.initialize()
-    state_store.save("session-1", SessionState(preferences={"style": "dry"}))
+    state_store.save_snapshot(
+        "session-1",
+        SessionState(preferences={"style": "dry"}),
+    )
     store.append("session-1", sample_messages())
 
     reopened_state = StateStore(store.db_path)
@@ -472,7 +475,9 @@ def test_state_and_history_can_share_the_same_database(store):
     reopened_history = HistoryStore(store.db_path, max_messages_per_session=10)
     reopened_history.initialize()
 
-    assert reopened_state.load("session-1").preferences == {"style": "dry"}
+    snapshot = reopened_state.load_snapshot("session-1")
+    assert snapshot is not None
+    assert snapshot.state.preferences == {"style": "dry"}
     assert reopened_history.load("session-1").messages == sample_messages()
 
 
