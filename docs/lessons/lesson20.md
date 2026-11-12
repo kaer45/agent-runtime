@@ -449,4 +449,4 @@ after clear: 0
 
 ## 12. 下一课
 
-第 20.5 课把 `ContextPlanner`、`HistoryStore`、`TurnStateUpdater` 和 `ContextBuilder` 串成 Runtime 接入设计；第 20.6 课写 TurnOrchestrator 代码。
+第 20.5 课把 `ContextPlanner`、`HistoryStore`、`TurnStateUpdater` 和 `ContextBuilder` 串成 Runtime 接入设计；第 20.6 课已实现 TurnOrchestrator 和聊天链路接线。

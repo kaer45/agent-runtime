@@ -28,7 +28,7 @@
 
 ## 2. 起点与目标形态
 
-**当前起点（第 20 课结束，20.5 设计已准备）**
+**当前起点（第 20.6 课结束，聊天链路已接入状态与历史）**
 
 - 已有：`ToolRegistry` / `ToolRunner` / 事件模型 / `TaskPlan` / `TaskDAG` / `TaskConverter` / `TaskScheduler`
 - 已有：`TaskPlanner` / `PlanRunner` / `IntentRouter` / `ChatResponder`，能分流聊天与任务
@@ -41,7 +41,11 @@
 - 已有：`StateRenderer`，按 section 优先级把状态渲染进预算
 - 已有：`ContextBuilder`，把 system prompt、状态、摘要和历史组装成 messages
 - 已有：`TurnStateUpdater`，回合后串行、幂等地提取并应用状态
-- 测试：256 个用例通过
+- 已有：`HistoryStore`，coverage 可领先删除，`append_once` 按 turn 幂等
+- 已有：`ContextPlanner`，固定配额预裁剪历史
+- 已有：`TurnOrchestrator`，把上下文、回答、状态更新和历史收尾串成一轮
+- 已有：`session_id` 贯穿 API / Runtime / 事件 / 状态 / 历史
+- 测试：269 个用例通过
 - 缺口：可靠性、工具生态、可观测未开始
 
 **第 36 课目标形态**
@@ -116,8 +120,8 @@
 | 18 | 上下文接入 Runtime | `ContextBuilder` 组装 messages | ✅ |
 | 19 | 状态更新接入对话流程 | 回合后提取、异步更新、幂等 | ✅ |
 | 20 | 统一历史管理与持久化 | 消息/摘要/状态快照统一存储与保留策略 | ✅ |
-| 20.5 | 组件接入设计（加餐） | `TurnOrchestrator` 契约、时序与测试计划 | 🟡 |
-| 20.6 | 组件接入 Runtime（加餐） | session_id + 聊天链路接线 | ⬜ |
+| 20.5 | 组件接入设计（加餐） | `TurnOrchestrator` 契约、请求/存储两级裁剪、时序与测试计划 | ✅ |
+| 20.6 | 组件接入 Runtime（加餐） | session_id + 聊天链路接线 + `append_once` | ✅ |
 | 21 | 任务状态机 | 显式 FSM + 合法转换守卫 | ⬜ |
 | 22 | DAG 校验与死锁检测 | 预检：环、不可达、无进展、超时 | ⬜ |
 | 23 | 安全重试与幂等 | 错误分类、退避、幂等键 | ⬜ |
@@ -141,74 +145,77 @@
 
 ## 5. 当前架构与目标架构
 
-### 5.1 当前架构（第 19 课结束）
+### 5.1 当前架构（第 20.6 课结束）
 
-> 实线是当前真实调用链；虚线是已实现但尚未接入 Runtime 的组件，或本课进行中的组件。
+> 实线是当前真实调用链；虚线是后续任务或尚未接入的部分。
 
 ```mermaid
 flowchart TB
     subgraph 接入层
-        UI[Web UI] --> API["FastAPI /chat<br/>无 session_id"]
+        UI[Web UI] --> API["FastAPI /chat<br/>session_id 可选"]
     end
 
-    subgraph 编排层
+    subgraph 聊天路径
         API --> RT[AgentRuntime]
         RT --> IR[IntentRouter]
-        IR -->|CHAT| CR[ChatResponder]
+        IR -->|CHAT| TO[TurnOrchestrator]
+        TO --> CP[ContextPlanner]
+        TO --> CB[ContextBuilder]
+        CP -. 配额 .-> CB
+        CB --> SR[StateRenderer]
+        TO --> CR[ChatResponder]
+        TO --> UP[TurnStateUpdater]
+        UP --> SE[StateExtractor]
+        UP --> SS[StateService]
+        TO --> HS[HistoryStore]
+        SS --> ST[(SQLite<br/>StateStore)]
+        HS --> ST
+        TO -->|yield RuntimeEvent| API
+    end
+
+    subgraph 任务路径
         IR -->|TASK| PR[PlanRunner]
         PR --> PL[TaskPlanner]
         PR --> EX[TaskPlanExecutor]
         EX --> SCH[TaskScheduler]
         SCH --> TR[ToolRunner]
         TR --> REG[ToolRegistry]
-        CR -->|yield RuntimeEvent| API
         PR -->|yield RuntimeEvent| API
     end
 
-    subgraph 已有但未接入
-        CB[ContextBuilder]
-        CP[ContextPlanner]
-        SR[StateRenderer]
-        SS[StateService]
-        SE[StateExtractor]
-        ST[(SQLite StateStore)]
-        UP["TurnStateUpdater<br/>已实现未接入"]
-        HS["HistoryStore<br/>已实现未接入"]
+    subgraph 后续
         MTL["ModelToolLoop<br/>当前未使用"]
+        EB["EventBus<br/>第 30 课"]
     end
 
-    RT -. 未接入 .-> CB
-    RT -. 未接入 .-> SS
-    CR -. 未接入 .-> CB
     PL -. 未接入 .-> CB
-    CB --> SR
-    CP -. 预算 .-> CB
-    SS --> ST
-    UP -. 调用 .-> SE
-    UP -. 调用 .-> SS
-    HS -. 共用 SQLite .-> ST
-    CB -. 读取 .-> HS
+    RT -. 未接入 .-> EB
 ```
 
-当前实际上还没有“统一上下文入口”：
+聊天路径已经有统一上下文入口：
 
-- `ChatResponder` 自己拼 `system + user`；
-- `TaskPlanner` 自己拼 `system + user`；
-- `PlanRunner` 自己拼最终回答的 messages；
-- `ContextBuilder` 只在测试和冒烟脚本里使用；
-- `StateService` / `StateExtractor` 还没有接进 Runtime；
-- `TurnStateUpdater` 已实现，但还没有接进 Runtime。
+- `TurnOrchestrator.begin_turn()` 读状态和历史；
+- `ContextPlanner` 固定配额预裁剪；
+- `ContextBuilder` 只 build 一次；
+- `ChatResponder.answer(messages)` 只负责生成；
+- `TurnStateUpdater` 和 `HistoryStore.append_once()` 负责回合收尾。
+
+任务路径仍然自己拼 messages：
+
+- `TaskPlanner` 拼规划阶段 messages；
+- `PlanRunner._compose_answer()` 拼最终回答 messages；
+- 任务路径还没有接 `ContextBuilder` / `TurnOrchestrator`。
 
 当前与目标架构的主要差异：
 
 | 目标边 | 当前状态 |
 |---|---|
-| `RT -> ContextBuilder` | 未接入 |
-| `RT -> StateExtractor -> StateService` | 未接入；第 19 课做回合协调 |
-| `ContextBuilder -> Summarizer` | 不成立；builder 只接收已生成的 `RollingSummary` |
+| `RT -> TurnOrchestrator -> ContextBuilder` | 聊天路径已接入 |
+| `RT -> TurnOrchestrator -> StateExtractor -> StateService` | 聊天路径已接入 |
+| `ContextBuilder -> Summarizer` | 不成立；orchestrator 生成摘要，builder 只接收 `RollingSummary` |
 | `RT -> ModelToolLoop -> TaskPlanner` | 实际走 `PlanRunner -> TaskPlanner`；`ModelToolLoop` 未被引用 |
 | `RT/SCH/TR -> EventBus` | 未实现；`RuntimeEvent` 直接 yield 给 SSE |
-| `CB -> History` | `HistoryStore` 已实现；尚未接入 |
+| `TO -> HistoryStore` | 已接入；`append_once` 持久幂等 |
 
 ### 5.2 目标架构（第 36 课形态）
 
@@ -308,6 +315,7 @@ agent-runtime/
 ├── agent/
 │   ├── llm.py                     # 第 5 课：支持 tool_choice
 │   ├── runtime.py
+│   ├── turn_orchestrator.py       # 第 20.6 课：聊天回合编排
 │   ├── model_tool_loop.py         # 第 6 课：接入 Planner
 │   ├── planner.py                 # 第 5 课
 │   ├── intent.py                  # 第 7 课
@@ -456,6 +464,7 @@ agent-runtime/
 - 第 18 课已完成：`context/builder.py` 提供 `ContextBuilder`，把 system prompt、状态、摘要和历史组装成预算内 messages。
 - 第 19 课已完成：`state/updater.py` 提供 `TurnStateUpdater`，支持回合后提取、异步更新、幂等和版本校验。
 - 第 20 课已完成：`context/history.py` 提供 `HistoryStore`（coverage 可领先删除），`context/planner.py` 提供 `ContextPlanner`（固定配额、预裁剪历史）。
-- 第 20.5 课设计文档已准备好：先读 [lesson20_5.md](lesson20_5.md)，明确 `TurnOrchestrator`、session_id、写入顺序和测试计划。
-- 下一步第 20.6 课：把聊天链路接进 `AgentRuntime`；之后再回到第 21 课任务状态机。
+- 第 20.5 课已完成： [lesson20_5.md](lesson20_5.md) 定下 `TurnOrchestrator`、session_id、请求级/存储级两级裁剪、写入顺序和测试计划。
+- 第 20.6 课已完成： [lesson20_6.md](lesson20_6.md) 把聊天链路接进 `AgentRuntime`；`HistoryStore.append_once()` 按 turn 持久幂等，`RuntimeEvent` 带 `session_id`。
+- 下一步第 21 课：任务状态机，并把任务路径接进统一的上下文/状态链路。
 - 如果需要，我可以补写 `lesson1.md` ~ `lesson4.md` 作为复习与验收文档（代码已完成，主要用于巩固和查漏）。
