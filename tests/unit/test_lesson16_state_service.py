@@ -188,6 +188,47 @@ def test_complete_abandoned_goal_raises_apply_error(service):
     asyncio.run(main())
 
 
+def test_abandon_done_goal_raises_apply_error(service):
+    async def main():
+        snapshot = await service.apply(
+            "session-1",
+            StateDelta(goals_add=["买酒"]),
+        )
+        goal_id = snapshot.state.goals[0].id
+
+        await service.apply(
+            "session-1",
+            StateDelta(goals_complete=[goal_id]),
+        )
+
+        with pytest.raises(StateApplyError, match="完成"):
+            await service.apply(
+                "session-1",
+                StateDelta(goals_abandon=[goal_id]),
+            )
+
+    asyncio.run(main())
+
+
+def test_failed_goal_transition_does_not_mutate_state():
+    state = SessionState(
+        goals=[
+            Goal(
+                id="g_111111111111",
+                text="买酒",
+                status=GoalStatus.ABANDONED,
+            )
+        ]
+    )
+
+    with pytest.raises(StateApplyError, match="放弃"):
+        apply_delta(
+            state,
+            StateDelta(goals_complete=["g_111111111111"]),
+        )
+
+    assert state.goals[0].status is GoalStatus.ABANDONED
+
 def test_duplicate_goal_and_constraint_are_idempotent(service):
     delta = StateDelta(
         goals_add=["买酒"],

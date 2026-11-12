@@ -24,6 +24,7 @@ class GoalStatus(str, Enum):
 
 
 class Goal(BaseModel):
+    """目标模型，有转换状态机"""
     # 配置模型字典，extra 默认是ignore，遇到模型没有的字段会静默丢失。现在使用forbid，遇到没有字段报错。
     # str_strip_whitespace 开启可以把字符串自动去掉首尾空格，这样比较时不会出错。
     model_config = ConfigDict(extra="forbid",str_strip_whitespace=True)
@@ -46,6 +47,32 @@ class Goal(BaseModel):
         if not value:
             raise ValueError("goal.text 不能为空")
         return value
+
+    def mark_done(self) -> Goal:
+        """标记目标完成，合法转换为：
+
+        1. done -> done，幂等。
+        2. active -> done。
+        """
+        if self.status == GoalStatus.DONE:
+            return self
+
+        if self.status == GoalStatus.ABANDONED:
+            raise ValueError(f"已放弃的目标不能标记完成：{self.id}")
+        return self.model_copy(update={"status":GoalStatus.DONE})
+
+    def mark_abandoned(self) -> Goal:
+        """标记目标放弃，合法转换为：
+
+        1. active -> abandoned。
+        2. abandoned -> abandoned，幂等。
+        """
+        if self.status == GoalStatus.ABANDONED:
+            return self
+
+        if self.status == GoalStatus.DONE:
+            raise ValueError(f"已完成的目标不能标记放弃：{self.id}")
+        return self.model_copy(update={"status":GoalStatus.ABANDONED})
 
 
 class SessionState(BaseModel):

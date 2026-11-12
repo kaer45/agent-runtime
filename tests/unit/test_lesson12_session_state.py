@@ -115,3 +115,60 @@ def test_state_round_trips_through_json():
     assert restored == state
     assert payload["goals"][0]["id"] == "g_111111111111"
     assert payload["goals"][0]["status"] == "done"
+
+
+def test_goal_mark_done():
+    goal = Goal(id="g_111111111111",text="买酒")
+
+    done = goal.mark_done()
+
+    assert done.status == GoalStatus.DONE
+    assert goal.status == GoalStatus.ACTIVE
+
+def test_goal_mark_done_idempotent():
+    goal = Goal(
+        id="g_111111111111",
+        text="买酒",
+        status=GoalStatus.DONE,
+    )
+
+    assert goal.mark_done() is goal
+
+def test_goal_mark_abandoned():
+    goal = Goal(id="g_111111111111", text="买酒")
+
+    abandoned = goal.mark_abandoned()
+
+    assert abandoned.status is GoalStatus.ABANDONED
+    assert goal.status is GoalStatus.ACTIVE
+
+
+def test_goal_mark_abandoned_is_idempotent():
+    goal = Goal(
+        id="g_111111111111",
+        text="买酒",
+        status=GoalStatus.ABANDONED,
+    )
+
+    assert goal.mark_abandoned() is goal
+
+def test_goal_cannot_complete_abandoned():
+    goal = Goal(
+        id="g_111111111111",
+        text="买酒",
+        status=GoalStatus.ABANDONED,
+    )
+
+    with pytest.raises(ValueError,match="放弃"):
+        goal.mark_done()
+
+
+def test_goal_cannot_abandon_done():
+    goal = Goal(
+        id="g_111111111111",
+        text="买酒",
+        status=GoalStatus.DONE,
+    )
+
+    with pytest.raises(ValueError, match="完成"):
+        goal.mark_abandoned()

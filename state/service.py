@@ -75,6 +75,8 @@ def apply_delta(state: SessionState, delta: StateDelta) -> SessionState:
             constraint_set.add(text)
 
     for text in delta.goals_add:
+        # 幂等去重，让重复 add 静默成功。
+        # 下方最终构建SessionState对象返回会触发 model_validate，保证最终数据正确性。
         if text not in goal_texts:
             goals.append(Goal(id=new_goal_id(), text=text))
             goal_texts.add(text)
@@ -84,22 +86,20 @@ def apply_delta(state: SessionState, delta: StateDelta) -> SessionState:
         if index is None:
             raise StateApplyError(f"目标不存在：{goal_id}")
         goal = goals[index]
-        if goal.status == GoalStatus.DONE:
-            continue
-        if goal.status == GoalStatus.ABANDONED:
-            raise StateApplyError(f"已放弃的目标不能标记完成：{goal_id}")
-        goals[index] = goal.model_copy(update={"status": GoalStatus.DONE})
+        try:
+            goals[index] = goal.mark_done()
+        except ValueError as exc:
+            raise StateApplyError(str(exc)) from exc
 
     for goal_id in delta.goals_abandon:
         index = goal_by_id.get(goal_id, None)
         if index is None:
             raise StateApplyError(f"目标不存在：{goal_id}")
         goal = goals[index]
-        if goal.status == GoalStatus.ABANDONED:
-            continue
-        if goal.status == GoalStatus.DONE:
-            raise StateApplyError(f"已完成的目标不能标记放弃：{goal_id}")
-        goals[index] = goal.model_copy(update={"status": GoalStatus.ABANDONED})
+        try:
+            goals[index] = goal.mark_abandoned()
+        except ValueError as exc:
+            raise StateApplyError(str(exc)) from exc
 
     return SessionState(
         preferences=preferences,
