@@ -18,7 +18,7 @@ git status --short
 # 8 passed
 
 .venv\Scripts\python.exe -m pytest -q
-# 269 passed
+# 278 passed
 ```
 
 本课只接聊天路径；任务路径仍然走旧的 `PlanRunner`，留到 20.7 再处理。
@@ -495,7 +495,7 @@ session_id: str | None = None
 
 ```powershell
 .venv\Scripts\python.exe -m pytest -q
-# 269 passed
+# 278 passed
 ```
 
 ---

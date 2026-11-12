@@ -7,6 +7,12 @@
 > 本课分支：`dev`
 
 > **后续变更（2026-11-02）**：`Goal` 已增加 `id`，`goals_complete` / `goals_abandon` 已改为目标 ID；本文的测试代码和参考实现是第 16 课当时版本。最新设计见 [goal-id-design.md](goal-id-design.md)。
+>
+> **后续变更（2026-11-12）**：开发期不再兼容旧数据；`ensure_goal_ids()` 已删除，
+> `Goal.id` 创建时生成，旧表 `version=0` 行直接 fail fast。
+> `SessionRegistry` 已改名为 `SessionStateRegistry`，其 `load/save/update`
+> 已移除，统一使用 snapshot API。
+> 当前策略见 [../development.md](../development.md)。
 
 ---
 

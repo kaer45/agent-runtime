@@ -6,6 +6,10 @@
 > 预计用时：2-3 小时
 > 本课分支：`dev`
 
+> **后续变更（2026-11-12）**：`SessionRegistry` 已改名为 `SessionStateRegistry`，
+> 旧 `load/save/update` 已移除；本课示例中的 registry 读写请使用
+> `load_snapshot/save_snapshot`。当前策略见 [../development.md](../development.md)。
+
 ---
 
 ## 0. 开工前检查

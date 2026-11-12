@@ -6,6 +6,10 @@
 > 预计用时：2-3 小时
 > 本课分支：`dev`
 
+> **后续变更（2026-11-12）**：开发期已移除 `StateStore.save/load` 兼容接口。
+> 本文示例中的 `store.save/load` 请对应替换为
+> `store.save_snapshot/load_snapshot`；当前策略见 [../development.md](../development.md)。
+
 ---
 
 ## 0. 开工前检查

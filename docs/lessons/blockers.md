@@ -36,6 +36,9 @@
 | 2026-11-01 | 第 16 课 | 本地锁与数据库乐观锁各自负责什么 | 已明确 |
 | 2026-11-01 | 第 16 课 | 语义空操作比较错对象，版本仍然 +1 | 已修复（`current.state`） |
 | 2026-11-01 | 第 16-17 课 | Goal ID：hash vs UUID、生成边界与旧数据迁移 | 已实现（UUID） |
+| 2026-11-12 | 20.6 后 | StateStore 旧表缺 `version` 时自动 `ALTER TABLE` | 已实现 |
+| 2026-11-12 | 20.6 后 | Goal 旧 JSON 缺 `id` 时 `ensure_goal_ids()` 回填 | 已实现 |
+| 2026-11-12 | 第 15 课 | `SessionRegistry` 命名过宽；`load/save/update` 绕过版本 | 已实现（`SessionStateRegistry`） |
 
 ---
 
@@ -610,6 +613,30 @@
 - `load()` 不共享缓存，但只是快照；一致性由 `acquire`/`update` 和数据库事务共同保证。
 - 多进程/多 worker 下 `asyncio.Lock` 无效，版本号/乐观锁留给第 16 课。
 
+### 15.5 · `SessionRegistry` 命名过宽，load/save/update 绕过版本
+
+- **现象**：`SessionRegistry` 只持有 `StateStore` 和每个 session 的锁，
+  并不管理历史；但 “Session” 会让后续 `HistoryStore` 也看起来应该归它管。
+  同时 `load/save/update` 都是状态级便捷接口，会隐藏 `version`。
+- **根因**：
+  - 类名按“会话”命名，职责却只覆盖“会话状态”；
+  - `load()` 丢 `StateSnapshot.version`；
+  - `save()` 走无条件写，绕过乐观锁；
+  - `update()` 是第二套读-改-写入口，和 `StateService` 重叠。
+- **决策**：
+  - `SessionRegistry` → `SessionStateRegistry`；
+  - 文件 `state/session.py` → `state/registry.py`；
+  - 删除 `load/save/update` 和 `StateMutator`；
+  - 只保留 `load_snapshot/save_snapshot + acquire`；
+  - 历史继续由 `HistoryStore` 独立管理，不塞进这个 registry。
+- **验证**：
+  - `test_lesson15_session_registry.py` 全部改用 snapshot API；
+  - 并发测试通过 `acquire + load_snapshot + save_snapshot(expected_version=...)`；
+  - 全量测试通过。
+- **状态**：已实现。
+- **教训**：**类名要按职责命名，不要按“它可能属于哪个大概念”命名**；
+  状态更新入口只保留一个，避免绕过版本的便捷 API。
+
 ---
 
 ## 第 16 课：状态变更闭环
@@ -698,6 +725,10 @@
 
 ### 16.5 · Goal ID：hash vs UUID，生成边界在哪
 
+> **后续变更（2026-11-12）**：开发期决定不再兼容旧数据；`Goal.id` 已改为
+> `default_factory` 生成，`ensure_goal_ids()` 已删除。本文的“旧数据回填”
+> 部分仅保留为历史设计记录，当前策略见 [development.md](../development.md)。
+
 - **现象**：最初设计“新目标 UUID + 旧目标文本 hash”，看起来零迁移；后来发现 hash 依赖文本，长期不稳定。
 - **根因**：
   - hash ID 把“身份”绑定到“内容”；
@@ -711,8 +742,10 @@
   - 补完立即按当前 version 保存，保证下一次读稳定；
   - `goals_add` 仍是文本，`goals_complete/abandon` 只收 `g_` 开头 ID；
   - 不需要改 SQLite schema。
-- **状态**：已实现。`Goal.id`、`ensure_goal_ids()`、`StateService.get/apply` 迁移、Delta ID 校验均已落地；全量 179 passed。
-- **教训**：**身份分配属于 Service，不属于模型/存储层**；补 ID 必须覆盖“读取路径”，不能只在写入路径补。
+- **状态**：历史实现（2026-11-12 已决策移除旧数据回填）。
+  `Goal.id`、`ensure_goal_ids()`、`StateService.get/apply` 迁移、Delta ID 校验曾落地；全量 179 passed。
+- **教训（当时）**：**身份分配属于 Service，不属于模型/存储层**；补 ID 必须覆盖“读取路径”，不能只在写入路径补。
+  **当前策略**：身份在创建时生成，不再在读取路径补。
 
 ### 16.6 · 本课设计结论
 
@@ -720,7 +753,60 @@
 - 写路径三条：无条件、创建、按版本更新；`rowcount=0` 是冲突。
 - 本地锁 + 数据库版本：单进程串行 + 跨进程冲突检测。
 - 空 delta / 语义空操作不写库、不涨版本；`expected_version` 仍然优先检查。
-- Goal ID 的最终方向是 UUID + Service 边界迁移，不用文本 hash。
+- Goal ID 的最终方向是 UUID + 创建时默认生成；开发期不做旧数据回填，不用文本 hash。
+
+
+
+---
+
+## 开发期 schema 策略（第 20.6 课后）
+
+> 结论：当前没有真实用户数据，schema 变更允许删除 `data/agent.db` 重建；
+> 不再维护旧表 `ALTER` 和旧 JSON 回填。
+> 完整约定见 [development.md](../development.md)。
+
+### 20.6-1 · StateStore 旧表缺少 `version` 时自动 `ALTER TABLE`
+
+- **现象**：`StateStore.initialize()` 检测 `session_states` 是否有 `version`
+  列；没有就 `ALTER TABLE` 补列，兼容第 14 课创建的旧表。
+- **根因**：`version` 是第 16 课为乐观锁新增的列；旧表没有它，直接查询会失败。
+- **为什么现在要删**：
+  - 当前没有需要保留的真实数据；
+  - 每次 schema 变更都要继续维护旧表分支；
+  - 旧库静默升级后，很难判断实际跑的是哪版 schema；
+  - 对应的迁移测试和文档会持续占用注意力。
+- **决策**：开发期删除自动 `ALTER TABLE`。新库直接创建当前 schema；
+  检测到旧表缺列时抛 `StateStoreError`，提示删除 `data/agent.db` 后重启。
+- **验证**：
+  - 新库创建后有 `version` 列；
+  - 旧表缺列时启动失败，错误信息明确提示删库；
+  - 旧 version=0 行同样 fail fast；
+  - 删除旧表迁移测试，改为 fail-fast 测试；
+  - 全量 `278 passed`。
+- **状态**：已实现。
+- **教训**：没有真实数据时，迁移代码不是保险，是每次改 schema 都要交的注意力税。
+
+### 20.6-2 · Goal 旧 JSON 缺少 `id` 时 `ensure_goal_ids()` 回填
+
+- **现象**：`Goal.id` 允许为空；`StateService.get()` 发现旧 Goal 没有 ID 时，
+  调 `ensure_goal_ids()` 生成 UUID，并按当前 `version` 写回，保证下次读取稳定。
+- **根因**：第 16 课把 Goal 从“文本匹配”升级为“ID 引用”，旧 JSON 没有 `id`。
+- **为什么现在要删**：
+  - 当前没有旧数据，回填路径永远不会命中；
+  - 读取时补 ID 并写回会顺带增加版本，增加状态语义噪音；
+  - `Goal.id` 仍可能被构造为空，产生新的“待回填”数据；
+  - 迁移逻辑常驻 `get()`，会让每次读状态都多一层历史包袱。
+- **决策**：开发期删除 `ensure_goal_ids()`；`Goal.id` 改为
+  `Field(default_factory=new_goal_id)`，创建时就有 ID；
+  旧 JSON / 旧库不做回填，直接删除重建。
+- **验证**：
+  - `Goal(text="买酒")` 自动生成合法 ID；
+  - 空 `Goal.id` 被拒绝；
+  - `StateService.get()` 不再写回旧 Goal；
+  - 删除旧 ID 迁移测试；
+  - 全量 `278 passed`。
+- **状态**：已实现。
+- **教训**：身份应该在创建时分配，而不是在读取路径上补；迁移代码不应常驻核心读写路径。
 
 ---
 

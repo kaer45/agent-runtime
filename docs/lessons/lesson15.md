@@ -6,6 +6,11 @@
 > 预计用时：2-3 小时
 > 本课分支：`dev`
 
+> **后续变更（2026-11-12）**：类名改为 `SessionStateRegistry`，文件改为
+> `state/registry.py`；`load/save/update` 已移除，统一使用
+> `load_snapshot/save_snapshot + acquire`。
+> 本文的旧实现仅保留为历史记录，当前策略见 [../development.md](../development.md)。
+
 ---
 
 ## 0. 开工前检查

@@ -4,6 +4,7 @@
 > 本文件是**总览与索引**；每课正文在 `lessonN.md`（如 `lesson5.md`）。
 > 计划基于你的课程目录和当前仓库状态设计，课程视频与本文有出入时，以课程为准，本文负责「怎么落地、怎么验收」。
 > 学习过程中卡住的问题记录在 [blockers.md](blockers.md)。
+> 开发期 schema / 数据库约定见 [../development.md](../development.md)。
 
 ---
 
@@ -45,7 +46,7 @@
 - 已有：`ContextPlanner`，固定配额预裁剪历史
 - 已有：`TurnOrchestrator`，把上下文、回答、状态更新和历史收尾串成一轮
 - 已有：`session_id` 贯穿 API / Runtime / 事件 / 状态 / 历史
-- 测试：269 个用例通过
+- 测试：278 个用例通过
 - 缺口：可靠性、工具生态、可观测未开始
 
 **第 36 课目标形态**
@@ -342,7 +343,7 @@ agent-runtime/
 │   ├── models.py                  # 第 12 课
 │   ├── extractor.py               # 第 13 课
 │   ├── store.py                   # 第 14 课
-│   ├── session.py                 # 第 15 课
+│   ├── registry.py                # 第 15 课：SessionStateRegistry
 │   ├── service.py                 # 第 16 课
 │   └── updater.py                 # 第 19 课
 ├── tools/
@@ -457,9 +458,9 @@ agent-runtime/
 - 第 12 课已完成：`state/models.py` 提供 `SessionState` / `Goal` / `GoalStatus`，覆盖偏好、目标、约束、进度与事实。
 - 第 13 课已完成：`state/extractor.py` 提供 `StateDelta` / `StateExtractor` / `StateExtractionError`，能把本轮对话转成状态增量。
 - 第 14 课已完成：`state/store.py` 提供 SQLite `StateStore`，支持 `save/load/exists/delete`。
-- 第 15 课已完成：`state/session.py` 提供 `SessionRegistry`，按会话隔离并串行化同会话写操作。
+- 第 15 课已完成：`state/registry.py` 提供 `SessionStateRegistry`，按会话隔离并串行化同会话写操作；旧 `load/save/update` 已移除。
 - 第 16 课已完成：`state/service.py` 提供 `StateService`，支持 delta 应用、版本递增和冲突检测。
-- Goal ID 升级已完成：`Goal.id` + `ensure_goal_ids()` + `goals_complete/abandon` 使用 ID。
+- Goal ID 升级已完成：`Goal.id` 创建时生成 + `goals_complete/abandon` 使用 ID；开发期已移除旧数据回填。
 - 第 17 课已完成：`context/renderer.py` 提供 `StateRenderer`，把状态按 section 渲染进 token 预算。
 - 第 18 课已完成：`context/builder.py` 提供 `ContextBuilder`，把 system prompt、状态、摘要和历史组装成预算内 messages。
 - 第 19 课已完成：`state/updater.py` 提供 `TurnStateUpdater`，支持回合后提取、异步更新、幂等和版本校验。

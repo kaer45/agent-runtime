@@ -2,6 +2,11 @@
 
 > 目标：把「按目标文本精确匹配」改成「按稳定 ID 引用目标」。
 > 适用范围：`SessionState` / `StateDelta` / `StateService` / `StateExtractor` / 第 17 课 `StateRenderer`。
+>
+> **后续变更（2026-11-12）**：开发期决定不再兼容旧数据。
+> `Goal.id` 已改为创建时默认生成，`ensure_goal_ids()` 已删除；
+> 本文的旧数据回填部分仅保留为历史设计记录。
+> 当前策略见 [development.md](../development.md)。
 
 ---
 

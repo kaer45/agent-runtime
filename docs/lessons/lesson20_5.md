@@ -17,7 +17,7 @@
 ```text
 TokenBudget
 HistorySummarizer
-SessionState / StateStore / SessionRegistry
+SessionState / StateStore / SessionStateRegistry
 StateService / StateExtractor
 StateRenderer / ContextBuilder
 TurnStateUpdater
