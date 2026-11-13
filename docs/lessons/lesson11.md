@@ -6,6 +6,10 @@
 > 预计用时：2-3 小时
 > 本课分支：`dev`
 
+> **后续变更（2026-11-13）**：`HistorySummarizer` 和 `RollingSummary` 已迁移到
+> `history/` 包；本文示例中的 `context.summarizer` 路径仅保留为历史记录。
+> 当前结构见 [README.md](README.md) 的目录树。
+
 ---
 
 ## 0. 开工前检查

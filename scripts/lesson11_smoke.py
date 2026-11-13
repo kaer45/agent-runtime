@@ -1,7 +1,8 @@
 import asyncio
 from types import SimpleNamespace
 
-from context.summarizer import HistorySummarizer, RollingSummary
+from history.models import RollingSummary
+from history.summarizer import HistorySummarizer
 
 
 class FakeLLM:

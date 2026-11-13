@@ -4,14 +4,9 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from state.extractor import (
-    STATE_DELTA_TOOL,
-    STATE_TOOL_NAME,
-    StateDelta,
-    StateExtractionError,
-    StateExtractor,
-)
-from state.models import SessionState
+from state.extractor import StateExtractionError, StateExtractor
+from state.models import SessionState, StateDelta
+from state.prompts import STATE_DELTA_TOOL, STATE_TOOL_NAME
 from tests.fixtures.fake_llm import FakeLLM, FakeMessage, FakeToolCall
 
 

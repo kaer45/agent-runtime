@@ -11,9 +11,9 @@ from agent.planner import TaskPlanner
 from agent.turn_orchestrator import TurnOrchestrator
 from context.budget import TokenBudget
 from context.builder import ContextBuilder
-from context.history import HistoryStore
+from history.store import HistoryStore
 from context.planner import ContextPlanner
-from context.summarizer import HistorySummarizer
+from history.summarizer import HistorySummarizer
 from state.extractor import StateExtractor
 from state.service import StateService
 from state.registry import SessionStateRegistry

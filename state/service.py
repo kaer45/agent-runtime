@@ -8,8 +8,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from state.extractor import StateDelta
-from state.models import Goal, SessionState
+from state.models import Goal, SessionState, StateDelta
 from state.registry import SessionStateRegistry
 from state.store import StateConflictError, StateSnapshot
 

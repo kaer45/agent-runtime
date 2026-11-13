@@ -7,8 +7,8 @@ import logging
 from dataclasses import dataclass, replace
 from typing import Sequence
 
-from state.extractor import StateDelta, StateExtractionError, StateExtractor
-from state.models import SessionState
+from state.extractor import StateExtractionError, StateExtractor
+from state.models import SessionState, StateDelta
 from state.service import StateApplyError, StateService
 from state.store import StateSnapshot, StateStoreError
 

@@ -3,7 +3,7 @@ import pytest
 from context.budget import BudgetExceededError, TokenBudget
 from context.builder import BuiltContext, ContextBuilder
 from context.renderer import RenderedState
-from context.summarizer import RollingSummary
+from history.models import RollingSummary
 from state.models import Goal, SessionState
 
 

@@ -5,6 +5,10 @@
 > 下一课：第 20.5 课接入设计，第 20.6 课接 Runtime
 > 说明：本课采用 **D 模型**（摘要覆盖可以领先于物理删除）+ `ContextPlanner`
 
+> **后续变更（2026-11-13）**：`HistoryStore`、`HistorySnapshot`、`RollingSummary`
+> 已迁移到 `history/` 包；`ContextPlanner` 仍留在 `context/`。
+> 当前结构见 [README.md](README.md) 的目录树。
+
 ---
 
 ## 0. 开工前检查

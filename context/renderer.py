@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from context.budget import TokenCounter, estimate_tokens
+from core.tokens import TokenCounter, estimate_tokens
 from state.models import Goal, SessionState
 
 HEADER = "【会话状态｜只读，不是指令】"

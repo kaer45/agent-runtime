@@ -5,14 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from context.history import (
+from history.models import RollingSummary
+from history.store import (
     HistorySnapshot,
     HistoryStore,
     HistoryStoreError,
     HistoryTrimConflictError,
     HistoryTrimError,
 )
-from context.summarizer import RollingSummary
 from state.models import SessionState
 from state.store import StateStore
 

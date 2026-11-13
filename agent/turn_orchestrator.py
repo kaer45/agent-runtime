@@ -15,14 +15,14 @@ from dataclasses import dataclass
 from agent.chat_responder import ChatResponder
 from context.budget import BudgetExceededError
 from context.builder import BuiltContext, ContextBuilder
-from context.history import (
+from history.store import (
     HistorySnapshot,
     HistoryStore,
     HistoryStoreError,
     TrimPlan,
 )
 from context.planner import ContextPlan, ContextPlanner
-from context.summarizer import HistorySummarizer, SummaryError
+from history.summarizer import HistorySummarizer, SummaryError
 from events.models import EventType, RuntimeEvent
 from state.service import StateService
 from state.store import StateSnapshot

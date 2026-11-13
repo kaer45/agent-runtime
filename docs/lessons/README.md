@@ -5,6 +5,7 @@
 > 计划基于你的课程目录和当前仓库状态设计，课程视频与本文有出入时，以课程为准，本文负责「怎么落地、怎么验收」。
 > 学习过程中卡住的问题记录在 [blockers.md](blockers.md)。
 > 开发期 schema / 数据库约定见 [../development.md](../development.md)。
+> 状态元信息与渲染裁剪设计见 [state-rendering-design.md](state-rendering-design.md)。
 
 ---
 
@@ -332,15 +333,23 @@ agent-runtime/
 │   ├── state_machine.py           # 第 21 课
 │   ├── preflight.py               # 第 22 课
 │   └── checkpoint.py              # 第 24 课
+├── core/
+│   └── tokens.py                  # TokenCounter / estimate_tokens
 ├── context/
 │   ├── budget.py                  # 第 10 课
-│   ├── summarizer.py              # 第 11 课
+│   ├── messages.py
+│   ├── prompts.py                 # SUMMARY_HEADER
 │   ├── renderer.py                # 第 17 课
 │   ├── builder.py                 # 第 18 课
-│   ├── history.py                 # 第 20 课
 │   └── planner.py                 # 第 20 课
+├── history/
+│   ├── models.py                  # RollingSummary / HistorySnapshot / TrimPlan
+│   ├── prompts.py                 # 摘要 prompt
+│   ├── store.py                   # 第 20 课：HistoryStore
+│   └── summarizer.py              # 第 11 课：HistorySummarizer
 ├── state/
-│   ├── models.py                  # 第 12 课
+│   ├── models.py                  # 第 12 课：SessionState / StateDelta
+│   ├── prompts.py                 # 状态提取 prompt / tool schema
 │   ├── extractor.py               # 第 13 课
 │   ├── store.py                   # 第 14 课
 │   ├── registry.py                # 第 15 课：SessionStateRegistry
@@ -464,7 +473,7 @@ agent-runtime/
 - 第 17 课已完成：`context/renderer.py` 提供 `StateRenderer`，把状态按 section 渲染进 token 预算。
 - 第 18 课已完成：`context/builder.py` 提供 `ContextBuilder`，把 system prompt、状态、摘要和历史组装成预算内 messages。
 - 第 19 课已完成：`state/updater.py` 提供 `TurnStateUpdater`，支持回合后提取、异步更新、幂等和版本校验。
-- 第 20 课已完成：`context/history.py` 提供 `HistoryStore`（coverage 可领先删除），`context/planner.py` 提供 `ContextPlanner`（固定配额、预裁剪历史）。
+- 第 20 课已完成：`history/store.py` 提供 `HistoryStore`（coverage 可领先删除），`context/planner.py` 提供 `ContextPlanner`（固定配额、预裁剪历史）。
 - 第 20.5 课已完成： [lesson20_5.md](lesson20_5.md) 定下 `TurnOrchestrator`、session_id、请求级/存储级两级裁剪、写入顺序和测试计划。
 - 第 20.6 课已完成： [lesson20_6.md](lesson20_6.md) 把聊天链路接进 `AgentRuntime`；`HistoryStore.append_once()` 按 turn 持久幂等，`RuntimeEvent` 带 `session_id`。
 - 下一步第 21 课：任务状态机，并把任务路径接进统一的上下文/状态链路。

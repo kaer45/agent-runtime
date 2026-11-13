@@ -1,32 +1,19 @@
 """上下文 token 预算：计数、保护关键消息、从旧到新裁剪。
 
-本模块只做预算规划，不调用模型，也不做摘要。
+本模块只做消息级的预算规划和裁剪，不调用模型、不生成摘要。
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Sequence # Sequence可以支持遍历、索引、len，相比于Iterator更灵活，Iterator有时不支持len和索引
+from typing import  Sequence # Sequence可以支持遍历、索引、len，相比于Iterator更灵活，Iterator有时不支持len和索引
 
 from context.messages import validate_message_sequence
+from core.tokens import estimate_tokens, TokenCounter
 
-TokenCounter = Callable[[str], int] # 实现依赖注入，相当于声明好了一个接口，接收一个字符串，返回统计的token数，以后可以传不同实现
 
 MESSAGE_OVERHEAD = 4
 
-
-def estimate_tokens(text: str) -> int:
-    """粗略估算 token 数：CJK 字符按 1，其他字符按约 4 字符 1 token。
-
-    这不是精确 tokenizer，只用于预算规划。生产环境应留安全余量，
-    或注入厂商 tokenizer。
-    """
-    if not text:
-        return 0
-
-    cjk = sum(1 for char in text if "\u4e00" <= char <= "\u9fff")
-    other = len(text) - cjk
-    return cjk + (other + 3) // 4
 
 
 class BudgetExceededError(ValueError):

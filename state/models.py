@@ -113,3 +113,112 @@ class SessionState(BaseModel):
             raise ValueError("progress 的 key 不能为空")
 
         return self
+
+class StateDelta(BaseModel):
+    """一次对话轮次产生的状态增量。
+
+    字段名中的 ``_set`` 表示新增或覆盖，``_remove`` 表示删除；
+    ``goals_add`` 使用目标文本，``goals_complete`` / ``goals_abandon``
+    使用已有目标的 ID。
+    """
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    preferences_set: dict[str, Any] = Field(default_factory=dict)
+    preferences_remove: list[str] = Field(default_factory=list)
+    facts_set: dict[str, Any] = Field(default_factory=dict)
+    facts_remove: list[str] = Field(default_factory=list)
+    goals_add: list[str] = Field(default_factory=list)
+    goals_complete: list[str] = Field(default_factory=list)
+    goals_abandon: list[str] = Field(default_factory=list)
+    constraints_add: list[str] = Field(default_factory=list)
+    constraints_remove: list[str] = Field(default_factory=list)
+    progress_set: dict[str, str] = Field(default_factory=dict)
+    progress_remove: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_delta(self):
+        self._reject_overlap(
+            self.preferences_set, self.preferences_remove, "preferences"
+        )
+        self._reject_overlap(self.facts_set, self.facts_remove, "facts")
+        self._reject_overlap(self.progress_set, self.progress_remove, "progress")
+        self._reject_overlap(
+            set(self.constraints_add), set(self.constraints_remove), "constraints"
+        )
+
+        self._reject_overlap(
+            set(self.goals_complete),
+            set(self.goals_abandon),
+            "goals complete/abandon",
+        )
+
+        for name, values in (
+            ("preferences_remove", self.preferences_remove),
+            ("facts_remove", self.facts_remove),
+            ("goals_add", self.goals_add),
+            ("goals_complete", self.goals_complete),
+            ("goals_abandon", self.goals_abandon),
+            ("constraints_add", self.constraints_add),
+            ("constraints_remove", self.constraints_remove),
+            ("progress_remove", self.progress_remove),
+        ):
+            self._reject_blank_and_duplicate(name, values)
+
+        for name, values in (
+            ("goals_complete", self.goals_complete),
+            ("goals_abandon", self.goals_abandon),
+        ):
+            self._reject_invalid_goal_ids(name, values)
+
+        for name, values in (
+            ("preferences_set", self.preferences_set),
+            ("facts_set", self.facts_set),
+            ("progress_set", self.progress_set),
+        ):
+            for key in values:
+                if not key.strip():
+                    raise ValueError(f"{name} 的 key 不能为空")
+
+        return self
+
+    @staticmethod
+    def _reject_overlap(set_values, remove_values, name: str) -> None:
+        overlap = set(set_values) & set(remove_values)
+        if overlap:
+            if "goals" in name:
+                raise ValueError(f"{name} 不能同时完成和放弃目标：{sorted(overlap)}")
+            raise ValueError(f"{name} 不能同时设置和删除：{sorted(overlap)}")
+
+    @staticmethod
+    def _reject_blank_and_duplicate(name: str, values: list[str]) -> None:
+        if any(not value.strip() for value in values):
+            raise ValueError(f"{name} 不能包含空字符串")
+        if len(values) != len(set(values)):
+            raise ValueError(f"{name} 不能包含重复项")
+
+    @staticmethod
+    def _reject_invalid_goal_ids(name: str, values: list[str]) -> None:
+        invalid = [value for value in values if not is_valid_goal_id(value)]
+        if invalid:
+            raise ValueError(
+                f"{name} 必须是目标 ID（g_ + 12 位十六进制）：{invalid}"
+            )
+
+    def is_empty(self) -> bool:
+        """是否没有任何变更。"""
+        return not any(
+            (
+                self.preferences_set,
+                self.preferences_remove,
+                self.facts_set,
+                self.facts_remove,
+                self.goals_add,
+                self.goals_complete,
+                self.goals_abandon,
+                self.constraints_add,
+                self.constraints_remove,
+                self.progress_set,
+                self.progress_remove,
+            )
+        )

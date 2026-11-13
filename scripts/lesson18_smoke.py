@@ -1,6 +1,6 @@
 from context.budget import TokenBudget
 from context.builder import ContextBuilder
-from context.summarizer import RollingSummary
+from history.models import RollingSummary
 from state.models import Goal, GoalStatus, SessionState
 
 

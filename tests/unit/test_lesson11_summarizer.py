@@ -2,7 +2,8 @@ import asyncio
 
 import pytest
 
-from context.summarizer import HistorySummarizer, RollingSummary, SummaryError
+from history.models import RollingSummary
+from history.summarizer import HistorySummarizer, SummaryError
 from tests.fixtures.fake_llm import FakeLLM, FakeMessage
 
 

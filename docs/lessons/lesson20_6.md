@@ -75,7 +75,7 @@ finish_turn
 
 | 文件 | 改动 |
 |---|---|
-| `context/history.py` | 新增 `session_turns`、`append_once()`、锁冲突重试 |
+| `history/store.py` | 新增 `session_turns`、`append_once()`、锁冲突重试 |
 | `agent/turn_orchestrator.py` | 新增 `TurnContext`、`TurnFinishResult`、`TurnOrchestrator` |
 | `agent/chat_responder.py` | 新增 `answer(messages)`；`run()` 兼容旧文本和 messages |
 | `agent/runtime.py` | 接入 state/history/builder/planner/summarizer/updater；`run` 增加 `session_id` |

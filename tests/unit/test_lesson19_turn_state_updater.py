@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from state.extractor import StateDelta, StateExtractionError
-from state.models import SessionState
+from state.extractor import StateExtractionError
+from state.models import SessionState, StateDelta
 from state.service import StateService
 from state.registry import SessionStateRegistry
 from state.store import StateStore

@@ -1,6 +1,7 @@
 import pytest
 
-from context.budget import BudgetExceededError, TokenBudget, estimate_tokens
+from context.budget import BudgetExceededError, TokenBudget
+from core.tokens import estimate_tokens
 from context.messages import MessageSequenceError, validate_message_sequence
 
 

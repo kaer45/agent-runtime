@@ -24,12 +24,9 @@ import os
 from dataclasses import dataclass, field
 
 from agent.llm import LLM
-from state.extractor import (
-    EXTRACTION_SYSTEM_PROMPT,
-    StateExtractionError,
-    StateExtractor,
-)
+from state.extractor import StateExtractionError, StateExtractor
 from state.models import Goal, SessionState
+from state.prompts import EXTRACTION_SYSTEM_PROMPT
 from state.service import StateApplyError, apply_delta
 
 

@@ -2,8 +2,7 @@ import asyncio
 import tempfile
 from pathlib import Path
 
-from state.extractor import StateDelta
-from state.models import SessionState
+from state.models import SessionState, StateDelta
 from state.service import StateService
 from state.registry import SessionStateRegistry
 from state.store import StateStore

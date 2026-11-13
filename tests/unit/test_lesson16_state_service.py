@@ -4,8 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from state.extractor import StateDelta
-from state.models import Goal, GoalStatus, SessionState
+from state.models import Goal, GoalStatus, SessionState, StateDelta
 from state.service import StateApplyError, StateService, apply_delta
 from state.registry import SessionStateRegistry
 from state.store import StateConflictError, StateStore

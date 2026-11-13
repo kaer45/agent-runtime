@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from typing import Sequence
 
 from context.budget import BudgetExceededError, MESSAGE_OVERHEAD, TokenBudget
-from context.builder import SUMMARY_HEADER
-from context.summarizer import RollingSummary
+from context.prompts import SUMMARY_HEADER
+from history.models import RollingSummary
 
 
 @dataclass(frozen=True)

@@ -6,6 +6,10 @@
 > 预计用时：2-3 小时
 > 本课分支：`dev`
 
+> **后续变更（2026-11-13）**：`RollingSummary` 已迁移到 `history.models`；
+> `SUMMARY_HEADER` 已迁移到 `context.prompts`。本文中的旧 import 仅保留为
+> 历史记录，当前结构见 [README.md](README.md) 的目录树。
+
 ---
 
 ## 0. 开工前检查

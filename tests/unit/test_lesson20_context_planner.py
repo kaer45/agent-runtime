@@ -2,7 +2,7 @@ import pytest
 
 from context.budget import BudgetExceededError, TokenBudget
 from context.planner import ContextPlan, ContextPlanner
-from context.summarizer import RollingSummary
+from history.models import RollingSummary
 
 
 SYSTEM = "SYS"
