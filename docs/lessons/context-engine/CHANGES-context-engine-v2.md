@@ -42,6 +42,7 @@
 |---|---|---|---|---|---|---|---|
 | C1 | 2026-11-17 | 口径修正 | `decide(metrics)` 无法判定 `FLOOR_UNMET`：判定依据是 `last6_tokens > history_ceiling`，而 `HistoryMetrics` 的四个字段里没有 ceiling。决策顺序、阈值、优先级都不变，只补参数。 | §5.3（顺序不变，无业务改动） | §7.2 签名改为 `decide(metrics, ceiling)` | `history/metrics.py`、`ContextEngine`（M2 issue）、`HistoryCompactor`（M3） | 已实现 |
 | C2 | 2026-11-17 | 口径修正 | 预算算术错误：`4K+4K+8K+4K+8K+80K+512` 实际是 **108,512**，文档写成 108.5K / 108,500，等于把 512 取整成 0.5K。改为精确值，否则文档与 `to_display()` 输出对不上。 | §3.2、§3.3、§8.3 | §3.1、§3.7、§3.10、§11.2 | `ContextLimits.configured_capacity`、预算表展示、`tools_ceiling=0` 时的 100,512 | 已实现 |
+| C3 | 2026-11-17 | 口径修正 | 消息计数下沉到 `core/tokens.py`，`TokenBudget` 只做委托。原因：`HistoryStore` 写入 `token_count` 也要用同一口径，但 history 不能反向 import context。算法与数值完全不变。 | §5.2（指标口径不变） | §3.2 措辞：改为“与 `TokenBudget.count_messages` 同源实现” | `core/tokens.py`、`context/budget.py`、`history/turn_store.py` | 已实现 |
 
 类型取值：`设计缺口` / `需求变更` / `口径修正` / `删除项`。
 状态取值：`提议` / `已定稿` / `已实现`。
@@ -73,5 +74,11 @@
 | M2 | `ContextEngine` + 组件 + `ToolSelector` + 报告与展示 + thin slice | `context-engine-m2` |
 | M3a | `LLMResponse` / `chat_with_meta` / `HistorySummarizer` | `context-engine-m3a` |
 | M3b | `HistoryCompactor` + `TurnOrchestrator` + middleware + 删旧实现 | `context-engine-m3b` |
+
+已打标签：
+
+| 标签 | 指向 | 完成内容 |
+|---|---|---|
+| `context-engine-m1a` | `6fc5d31` | 数据模型、统一 Issue、`history/metrics.py`、`StateSnapshot` 移位；367 tests green |
 
 每个里程碑完成时：单元测试全绿 → 回填第 3 节状态 → 打标签。

@@ -188,7 +188,8 @@ class TurnRecord:
 约束：
 
 - `seq >= 1`；
-- `token_count > 0`，由 `TokenBudget.count_messages(messages)` 计算；
+- `token_count > 0`，由消息计数口径计算：`TokenBudget.count_messages` 与
+  `core.tokens.count_messages` 是同一份实现，历史层不反向依赖 `context`；
 - `token_count` 必须用和 engine / compactor 相同的 counter 计算；
   更换 tokenizer 时要重算历史 turn，不能混用旧计数；
 - `messages` 非空且已通过 turn 校验；
