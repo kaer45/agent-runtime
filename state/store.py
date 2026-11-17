@@ -15,14 +15,13 @@ from __future__ import annotations
 import json
 import sqlite3
 from contextlib import contextmanager
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
 from pydantic import ValidationError
 
-from state.models import SessionState
+from state.models import SessionState, StateSnapshot
 
 
 _SCHEMA = """
@@ -60,14 +59,7 @@ WHERE session_id = ? AND version = ?
 """
 
 
-@dataclass(frozen=True)
-class StateSnapshot:
-    """从存储层读出的一份状态快照。"""
-
-    state: SessionState
-    version: int
-
-
+# StateSnapshot 的定义在 state.models；这里保留旧导入路径，调用方无需改动。
 class StateStoreError(RuntimeError):
     """状态保存/读取失败，或数据库中的状态已损坏。"""
 

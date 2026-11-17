@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import uuid
 
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
@@ -222,3 +223,23 @@ class StateDelta(BaseModel):
                 self.progress_remove,
             )
         )
+
+
+@dataclass(frozen=True)
+class StateSnapshot:
+    """从存储层读出的一份状态快照。
+
+    放在 models 层，避免 context / history 为了一个值对象反向依赖 store。
+    """
+
+    state: SessionState
+    version: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.state, SessionState):
+            raise TypeError("StateSnapshot.state 必须是 SessionState")
+
+        if isinstance(self.version, bool) or not isinstance(self.version, int):
+            raise TypeError("StateSnapshot.version 必须是整数")
+        if self.version < 0:
+            raise ValueError("StateSnapshot.version 不能为负数")
