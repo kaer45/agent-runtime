@@ -54,6 +54,7 @@
 | 编号 | 问题 | 涉及位置 | 状态 |
 |---|---|---|---|
 | Q1 | optional 全为 0 分时是否显式写“按 registry 顺序全收”；预算放不下时是停止还是跳过 | strategy §7.1 / protocol §4.7 | 待定 |
+| Q2 | `TokenBudget.fit` / `BudgetResult` / `BudgetExceededError` 的删除点，以及 `TokenBudget` 保留为薄计数器还是整体退役。连带 `context/__init__.py` 导出、`turn_orchestrator` 的异常捕获、两个 lesson script | strategy §9、§10.10；protocol §3.1 | 待 M3b 决定 |
 
 ## 5. 冻结前修订（已并入基线）
 
