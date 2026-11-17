@@ -86,7 +86,7 @@ available   = 248K
 | safety | 512 |
 
 ```text
-静态 configured_capacity = 4K + 4K + 8K + 4K + 8K + 80K + 512 = 108.5K
+静态 configured_capacity = 4K + 4K + 8K + 4K + 8K + 80K + 512 = 108,512
 ```
 
 组件之间**不互相借预算**。每个组件最多用到自己的 ceiling，用不完的额度
@@ -98,7 +98,7 @@ available   = 248K
 `configured_capacity`：
 
 ```text
-configured_capacity    = 4K + 4K + 8K + 4K + 8K + 80K + 512 = 108.5K
+configured_capacity    = 4K + 4K + 8K + 4K + 8K + 80K + 512 = 108,512
 configured_utilization = total_tokens / configured_capacity
 window_utilization     = total_tokens / available_tokens
 total_tokens           = message_tokens + tool_tokens
@@ -109,7 +109,7 @@ total_tokens           = message_tokens + tool_tokens
 - `safety` 只进分母，不重复进分子；
 - 不再有 `active_capacity`：它恒等于 `configured_capacity`，没有信息量；
 - 某个部署确实不要 tools 时，在构造 `ContextLimits` 时把 `tools_ceiling`
-  设为 0，`configured_capacity` 自然变成 100.5K。这是配置级开关，不是
+  设为 0，`configured_capacity` 自然变成 100,512。这是配置级开关，不是
   轮次级判断。
 
 history 压缩触发**不用** `configured_utilization`，而用独立的
@@ -673,7 +673,7 @@ Reserved for Output:            8,000
 Available for Input:          248,000
 Safety (denominator only):        512
 
-Configured Capacity:          108,500
+Configured Capacity:          108,512
 Message Tokens:                45,825
 Tool Tokens:                    2,100
 Total Used:                    47,925
@@ -689,7 +689,7 @@ History        45,000     80,000     56.3%    TRUNCATED    loaded 52K, rendered 
 Tools           2,100      8,000     26.3%    TRIMMED      selected 4, dropped 2
 User               80      4,000      2.0%    OK
 --------------------------------------------------------------------------------
-Total          47,925    108,500     44.2%    -
+Total          47,925    108,512     44.2%    -
 ```
 
 规则：

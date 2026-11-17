@@ -314,8 +314,8 @@ history_utilization      = history_tokens / history_ceiling
 last6_tokens             = 最近 6 个完整 turn 的 token_count 之和
 ```
 
-`configured_capacity` 是静态 108.5K，不随本轮是否使用工具变化。某个部署
-不要 tools 时，把 `ContextLimits.tools_ceiling` 设为 0，它会变成 100.5K。
+`configured_capacity` 是静态 108,512，不随本轮是否使用工具变化。某个部署
+不要 tools 时，把 `ContextLimits.tools_ceiling` 设为 0，它会变成 100,512。
 
 `history_utilization` 不 clamp 到 1.0；大于 1.0 表示未覆盖历史已经超过
 `history_ceiling`。`HISTORY_FLOOR_UNMET` 仍只看 `last6_tokens`。
@@ -552,7 +552,7 @@ Reserved for Output:            8,000
 Available for Input:          248,000
 Safety (denominator only):        512
 
-Configured Capacity:          108,500
+Configured Capacity:          108,512
 Message Tokens:                45,825
 Tool Tokens:                    2,100
 Total Used:                    47,925
@@ -568,7 +568,7 @@ History        45,000     80,000     56.3%    TRUNCATED    loaded 52K, rendered 
 Tools           2,100      8,000     26.3%    TRIMMED      selected 4, dropped 2
 User               80      4,000      2.0%    OK
 --------------------------------------------------------------------------------
-Total          47,925    108,500     44.2%    -
+Total          47,925    108,512     44.2%    -
 ```
 
 状态值：
@@ -1121,7 +1121,7 @@ class CompactionDecision(str, Enum):
 
 ```python
 def analyze(turns: Sequence[TurnRecord], ceiling: int) -> HistoryMetrics: ...
-def decide(metrics: HistoryMetrics) -> CompactionDecision: ...
+def decide(metrics: HistoryMetrics, ceiling: int) -> CompactionDecision: ...
 ```
 
 `HistoryMetrics` / `analyze` / `decide` 放 `history/metrics.py`，engine 和
@@ -1509,7 +1509,7 @@ class HistoryHardCapExceeded(HistoryStoreError):
 - state / summary 截断只影响 prompt；
 - history 按完整 turn 裁剪；
 - tools 按 `ToolSelector` 选择后再做 token 裁剪；
-- `configured_capacity` 恒为 108.5K；把 `tools_ceiling` 设为 0 时为 100.5K；
+- `configured_capacity` 恒为 108,512；把 `tools_ceiling` 设为 0 时为 100,512；
 - total_tokens / utilization 账闭合；
 - `HISTORY_OVER_TARGET` 只进 `ContextReport.issues`，level 为 WARNING；
 - `to_log()` 是 JSON 可序列化 dict，不含 schema / description；

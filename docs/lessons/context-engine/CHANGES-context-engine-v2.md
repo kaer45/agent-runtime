@@ -40,8 +40,8 @@
 
 | 编号 | 日期 | 类型 | 变更原因 | strategy 章节 | protocol 章节 | 影响面 | 状态 |
 |---|---|---|---|---|---|---|---|
-
-（暂无记录。冻结后尚无业务逻辑变更。）
+| C1 | 2026-11-17 | 口径修正 | `decide(metrics)` 无法判定 `FLOOR_UNMET`：判定依据是 `last6_tokens > history_ceiling`，而 `HistoryMetrics` 的四个字段里没有 ceiling。决策顺序、阈值、优先级都不变，只补参数。 | §5.3（顺序不变，无业务改动） | §7.2 签名改为 `decide(metrics, ceiling)` | `history/metrics.py`、`ContextEngine`（M2 issue）、`HistoryCompactor`（M3） | 已实现 |
+| C2 | 2026-11-17 | 口径修正 | 预算算术错误：`4K+4K+8K+4K+8K+80K+512` 实际是 **108,512**，文档写成 108.5K / 108,500，等于把 512 取整成 0.5K。改为精确值，否则文档与 `to_display()` 输出对不上。 | §3.2、§3.3、§8.3 | §3.1、§3.7、§3.10、§11.2 | `ContextLimits.configured_capacity`、预算表展示、`tools_ceiling=0` 时的 100,512 | 已实现 |
 
 类型取值：`设计缺口` / `需求变更` / `口径修正` / `删除项`。
 状态取值：`提议` / `已定稿` / `已实现`。
@@ -68,8 +68,10 @@
 
 | 里程碑 | 范围 | 计划标签 |
 |---|---|---|
-| M1 | 数据模型 + 元数据表 + `history/metrics.py` + `HistoryStore` | `context-engine-m1` |
-| M2 | `ContextEngine` + 组件 + `ToolSelector` + 报告与展示 | `context-engine-m2` |
-| M3 | `HistoryCompactor` + LLM 摘要适配 + `TurnOrchestrator` + middleware | `context-engine-m3` |
+| M1a | 数据模型 + `history/metrics.py` + `StateSnapshot` 移位 + 计数口径 | `context-engine-m1a` |
+| M1b | 元数据表 + `HistoryStore`（`append_turn_once` / `load` / CAS / 归档） | `context-engine-m1b` |
+| M2 | `ContextEngine` + 组件 + `ToolSelector` + 报告与展示 + thin slice | `context-engine-m2` |
+| M3a | `LLMResponse` / `chat_with_meta` / `HistorySummarizer` | `context-engine-m3a` |
+| M3b | `HistoryCompactor` + `TurnOrchestrator` + middleware + 删旧实现 | `context-engine-m3b` |
 
 每个里程碑完成时：单元测试全绿 → 回填第 3 节状态 → 打标签。
