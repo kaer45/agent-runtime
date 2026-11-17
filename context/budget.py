@@ -9,15 +9,19 @@ from dataclasses import dataclass
 from typing import  Sequence # Sequence可以支持遍历、索引、len，相比于Iterator更灵活，Iterator有时不支持len和索引
 
 from context.messages import validate_message_sequence
-from core.tokens import estimate_tokens, TokenCounter
-
-
-MESSAGE_OVERHEAD = 4
-
+from core.tokens import (
+    MESSAGE_OVERHEAD,
+    TokenCounter,
+    count_message,
+    count_messages,
+    count_text,
+    estimate_tokens,
+)
 
 
 class BudgetExceededError(ValueError):
     """必须保留的 system / 最新 user_input 已经超过输入预算"""
+
 
 @dataclass(frozen=True)
 class BudgetResult:
@@ -59,13 +63,13 @@ class TokenBudget:
         return self.max_tokens-self.reserve_output
 
     def count_text(self,text:str)->int:
-        return self.counter(text or "")
+        return count_text(self.counter, text)
 
     def count_message(self, message: dict) -> int:
-        return MESSAGE_OVERHEAD + self.count_text(self._message_text(message))
+        return count_message(self.counter, message)
 
     def count_messages(self, messages: Sequence[dict]) -> int:
-        return sum(self.count_message(message) for message in messages)
+        return count_messages(self.counter, messages)
 
     def fit(self, messages: Sequence[dict]) -> BudgetResult:
         """在预算内保留尽量新的消息，system 和最新 user 必须保留。
@@ -142,20 +146,6 @@ class TokenBudget:
                 index += 1
 
         return groups
-
-    @staticmethod
-    def _message_text(message: dict) -> str:
-        parts: list[str] = []
-        content = message.get("content")
-        if content is not None:
-            parts.append(str(content))
-
-        for call in message.get("tool_calls") or []:
-            function = call.get("function") or {}
-            parts.append(str(function.get("name") or ""))
-            parts.append(str(function.get("arguments") or ""))
-
-        return "\n".join(parts)
 
     @staticmethod
     def _protected_indices(messages: Sequence[dict]) -> set[int]:

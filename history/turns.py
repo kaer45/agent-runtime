@@ -10,6 +10,9 @@ v2 的存储粒度是 turn，不是 message：
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Sequence
+
+from history.errors import HistoryTurnInvalid
 
 
 @dataclass(frozen=True)
@@ -112,3 +115,92 @@ class HistorySnapshot:
             raise ValueError(
                 "HistorySnapshot.turns 必须全部满足 seq > covered_through_seq"
             )
+
+
+def validate_turn_messages(messages: Sequence[dict]) -> None:
+    """校验一轮消息是否满足 turn 结构（strategy §4.5）。
+
+    规则：
+
+    - 非空；第一条是 ``user``；一轮只有一条 ``user``；
+    - 最后一条是无 ``tool_calls`` 的 ``assistant``；
+    - 不允许 ``system``；
+    - ``assistant(tool_calls)`` 与后续 ``tool`` 结果一一配对，顺序一致；
+    - 每条 ``tool`` 都必须带 ``tool_call_id``。
+    """
+    if not isinstance(messages, (tuple, list)):
+        raise TypeError("messages 必须是消息序列")
+
+    messages = tuple(messages)
+    if not messages:
+        raise HistoryTurnInvalid("turn 消息不能为空")
+    if not all(isinstance(message, dict) for message in messages):
+        raise HistoryTurnInvalid("turn 的每条消息都必须是 dict")
+
+    roles = [message.get("role") for message in messages]
+    if roles[0] != "user":
+        raise HistoryTurnInvalid("turn 的第一条消息必须是 user")
+    if roles.count("user") != 1:
+        raise HistoryTurnInvalid("一轮只允许一条 user 消息")
+    if "system" in roles:
+        raise HistoryTurnInvalid("turn 内不允许 system 消息")
+
+    last = messages[-1]
+    if last.get("role") != "assistant" or last.get("tool_calls"):
+        raise HistoryTurnInvalid(
+            "turn 的最后一条必须是无 tool_calls 的 assistant"
+        )
+
+    index = 1
+    while index < len(messages):
+        message = messages[index]
+        role = message.get("role")
+
+        if role == "tool":
+            raise HistoryTurnInvalid(
+                "tool 消息必须紧跟在带 tool_calls 的 assistant 之后"
+            )
+
+        if role == "assistant" and message.get("tool_calls"):
+            call_ids = _tool_call_ids(message["tool_calls"])
+
+            cursor = index + 1
+            tool_ids: list[str] = []
+            while cursor < len(messages) and messages[cursor].get("role") == "tool":
+                tool_id = messages[cursor].get("tool_call_id")
+                if not isinstance(tool_id, str) or not tool_id:
+                    raise HistoryTurnInvalid(
+                        "每条 tool 消息都必须带非空 tool_call_id"
+                    )
+                tool_ids.append(tool_id)
+                cursor += 1
+
+            if tool_ids != call_ids:
+                raise HistoryTurnInvalid(
+                    "tool 结果必须与 tool_calls 一一对应且顺序一致"
+                )
+
+            index = cursor
+            continue
+
+        index += 1
+
+
+def _tool_call_ids(tool_calls) -> list[str]:
+    if not isinstance(tool_calls, (list, tuple)) or not tool_calls:
+        raise HistoryTurnInvalid("assistant.tool_calls 必须是非空列表")
+
+    call_ids: list[str] = []
+    for call in tool_calls:
+        if not isinstance(call, dict):
+            raise HistoryTurnInvalid("tool_calls 的每一项必须是 dict")
+
+        call_id = call.get("id")
+        if not isinstance(call_id, str) or not call_id:
+            raise HistoryTurnInvalid("每个 tool_call 都必须带非空 id")
+        call_ids.append(call_id)
+
+    if len(set(call_ids)) != len(call_ids):
+        raise HistoryTurnInvalid("同一轮内 tool_call id 不能重复")
+
+    return call_ids
