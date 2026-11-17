@@ -42,8 +42,8 @@ def _require_int(name: str, value: int, *, minimum: int) -> None:
 class ContextLimits:
     """静态预算上限。
 
-    ``configured_capacity`` 恒为 108.5K：所有组件恒定计入，没有 per-turn
-    开关。某个部署不要 tools 时，把 ``tools_ceiling`` 设为 0。
+    ``configured_capacity`` 恒为 108,512：所有组件恒定计入，没有 per-turn
+    开关。某个部署不要 tools 时，把 ``tools_ceiling`` 设为 0（变成 100,512）。
     """
 
     window_tokens: int = 256_000
