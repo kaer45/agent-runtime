@@ -280,6 +280,7 @@ class ComponentUsage:
 @dataclass(frozen=True)
 class ContextReport:
     components: dict[str, ComponentUsage]
+    limits: ContextLimits
 
     message_tokens: int
     tool_tokens: int
