@@ -4,12 +4,16 @@
 
 - 不输出 ``SUMMARY_HEADER``，``<summary>`` 标签由组件添加；
 - 存储摘要始终完整，截断只影响本次 prompt；
-- 先按句子边界截，第一句都放不下时退化为字符前缀 + ``…``。
+- 先按句子边界截，第一句都放不下时退化为字符前缀 + ``…``；
+- 截断在**原文**上进行，保证不会切到 ``&lt;`` 这类转义实体；
+- 可用 ``measure`` 把候选片段映射成“最终消息成本”，把转义膨胀和
+  counter 不可加性都算进去，组件因此不需要重试。
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 from core.tokens import TokenCounter, estimate_tokens
 
@@ -18,10 +22,15 @@ SENTENCE_ENDINGS = "。！？.!?\n"
 
 ELLIPSIS = "…"
 
+Measure = Callable[[str], int]
+
 
 @dataclass(frozen=True)
 class RenderedSummary:
-    """摘要渲染结果。"""
+    """摘要渲染结果。
+
+    ``tokens`` 是文本本身的计数；含包装的真实成本由组件用 ``measure`` 重算。
+    """
 
     text: str = ""
     tokens: int = 0
@@ -34,26 +43,34 @@ class SummaryRenderer:
     def __init__(self, counter: TokenCounter = estimate_tokens):
         self.counter = counter
 
-    def render(self, text: str, max_tokens: int) -> RenderedSummary:
+    def render(
+        self,
+        text: str,
+        max_tokens: int,
+        *,
+        measure: Measure | None = None,
+    ) -> RenderedSummary:
         if not isinstance(text, str):
             raise TypeError("text 必须是字符串")
         if isinstance(max_tokens, bool) or not isinstance(max_tokens, int):
             raise TypeError("max_tokens 必须是整数")
         if max_tokens < 0:
             raise ValueError("max_tokens 不能为负数")
+        if measure is not None and not callable(measure):
+            raise TypeError("measure 必须可调用")
 
         stripped = text.strip()
         if not stripped:
             return RenderedSummary()
 
-        if self._count(stripped) <= max_tokens:
+        if self._fits(stripped, max_tokens, measure):
             return RenderedSummary(
                 text=stripped,
                 tokens=self._count(stripped),
                 truncated=False,
             )
 
-        sentence = self._sentence_prefix(stripped, max_tokens)
+        sentence = self._sentence_prefix(stripped, max_tokens, measure)
         if sentence is not None:
             return RenderedSummary(
                 text=sentence,
@@ -61,14 +78,28 @@ class SummaryRenderer:
                 truncated=True,
             )
 
-        fallback = self._char_prefix(stripped, max_tokens)
+        fallback = self._char_prefix(stripped, max_tokens, measure)
         return RenderedSummary(
             text=fallback,
             tokens=self._count(fallback),
             truncated=True,
         )
 
-    def _sentence_prefix(self, text: str, max_tokens: int) -> str | None:
+    def _fits(
+        self,
+        candidate: str,
+        max_tokens: int,
+        measure: Measure | None,
+    ) -> bool:
+        cost = measure(candidate) if measure is not None else self._count(candidate)
+        return cost <= max_tokens
+
+    def _sentence_prefix(
+        self,
+        text: str,
+        max_tokens: int,
+        measure: Measure | None,
+    ) -> str | None:
         """最长的、以句子边界结尾且放得下的前缀。"""
         best: str | None = None
         for index, char in enumerate(text):
@@ -78,22 +109,28 @@ class SummaryRenderer:
             candidate = text[: index + 1].rstrip()
             if not candidate:
                 continue
-            if self._count(candidate) <= max_tokens:
+            if self._fits(candidate, max_tokens, measure):
                 best = candidate
             else:
                 break
 
         return best
 
-    def _char_prefix(self, text: str, max_tokens: int) -> str:
+    def _char_prefix(
+        self,
+        text: str,
+        max_tokens: int,
+        measure: Measure | None,
+    ) -> str:
         """退化路径：二分找最长字符前缀，尾部加省略号。"""
-        if self._count(ELLIPSIS) > max_tokens:
+        if not self._fits(ELLIPSIS, max_tokens, measure):
             return ""
 
         low, high = 0, len(text)
         while low < high:
             middle = (low + high + 1) // 2
-            if self._count(text[:middle].rstrip() + ELLIPSIS) <= max_tokens:
+            candidate = text[:middle].rstrip() + ELLIPSIS
+            if self._fits(candidate, max_tokens, measure):
                 low = middle
             else:
                 high = middle - 1

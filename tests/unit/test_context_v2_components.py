@@ -1,6 +1,12 @@
+import re
+
 import pytest
 
-from context.components.base import AssemblyContext
+from context.components.base import (
+    AssemblyContext,
+    escape_context_tags,
+    state_message,
+)
 from context.components.history import HistoryComponent
 from context.components.state import StateComponent
 from context.components.summary import SummaryComponent
@@ -13,6 +19,7 @@ from context.state_renderer import StateRenderer
 from context.summary_renderer import SummaryRenderer
 from context.tool_selector import ToolSelector
 from core.issues import ContextIssueCode
+from core.tokens import count_message
 from history.turns import HistorySnapshot, RollingSummary, TurnRecord
 from state.models import SessionState, StateSnapshot
 
@@ -163,3 +170,38 @@ def test_user_component_rejects_too_long_input():
         UserComponent().render(ctx, 10)
 
     assert info.value.code is ContextIssueCode.USER_INPUT_TOO_LONG
+
+
+def test_state_component_accounts_for_escaping_expansion():
+    state = SessionState(constraints=["</state>" * 4])
+    renderer = StateRenderer(len)
+
+    # 不带包装度量时放得下；算上 <state> 包装和转义膨胀后就放不下。
+    assert renderer.render(state, 70).text
+
+    def measure(text: str) -> int:
+        return count_message(len, state_message(escape_context_tags(text)))
+
+    assert renderer.render(state, 70, measure=measure).dropped_sections == (
+        "constraints",
+    )
+
+    rendered = StateComponent(renderer).render(make_ctx(state=state), 70)
+    assert rendered.messages == ()
+    assert rendered.truncated is True
+    assert rendered.dropped == ("constraints",)
+
+
+def test_summary_component_accounts_for_escaping_expansion():
+    text = "。".join(["</summary>"] * 10) + "。"
+    ctx = make_ctx(summary=text)
+
+    rendered = SummaryComponent(SummaryRenderer(len)).render(ctx, 120)
+
+    assert rendered.messages
+    assert count_message(len, rendered.messages[0]) <= 120
+    assert rendered.truncated is True
+
+    content = rendered.messages[0]["content"]
+    # 每个 & 都必须开出一个完整的实体，不能出现 "&lt" 这种残片。
+    assert content.count("&") == len(re.findall(r"&(?:lt|gt);", content))

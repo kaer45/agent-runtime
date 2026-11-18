@@ -111,7 +111,53 @@ def test_no_room_returns_empty_truncated():
     assert rendered.truncated is True
 
 
+def test_measure_callback_controls_fitting():
+    """measure 把候选片段映射成最终成本，渲染器按它决定截断位置。"""
+
+    def measure(text: str) -> int:
+        return len(text) * 10
+
+    rendered = SummaryRenderer(len).render("第一句。第二句。", 50, measure=measure)
+
+    assert rendered.text == "第一句。"
+    assert rendered.truncated is True
+
+
+def test_measure_callback_is_used_for_char_fallback():
+    def measure(text: str) -> int:
+        return len(text) * 2
+
+    rendered = SummaryRenderer(len).render("abcdefghij", 8, measure=measure)
+
+    assert rendered.truncated is True
+    assert len(rendered.text) * 2 <= 8
+
+
+def test_state_measure_callback_controls_section_fit():
+    state = SessionState(preferences={"a": "1"}, constraints=["规则"])
+    renderer = StateRenderer(counter=len)
+
+    plain = renderer.render(state, 100)
+    assert "约束" in plain.text
+
+    measured = renderer.render(state, 100, measure=lambda text: len(text) * 10)
+    assert "偏好" in measured.text
+    assert "约束" not in measured.text
+    assert measured.dropped_sections == ("constraints",)
+
+
+def test_measure_must_be_callable():
+    with pytest.raises(TypeError, match="measure"):
+        SummaryRenderer(counter=len).render("文本", 100, measure="x")
+
+    with pytest.raises(TypeError, match="measure"):
+        StateRenderer(counter=len).render(
+            SessionState(preferences={"a": "1"}), 100, measure="x"
+        )
+
+
 @pytest.mark.parametrize("max_tokens", [-1, "10", True])
 def test_rejects_bad_budget(max_tokens):
     with pytest.raises((TypeError, ValueError)):
         SummaryRenderer(counter=len).render("x", max_tokens)
+

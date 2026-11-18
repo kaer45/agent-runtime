@@ -16,7 +16,11 @@ _UNLIMITED = 10**9
 
 
 class SummaryComponent:
-    """存储摘要保持完整，渲染超限时按句子前缀截断。"""
+    """存储摘要保持完整，渲染超限时按句子前缀截断。
+
+    截断在原文上进行；``measure`` 负责把候选片段映射成最终消息成本，
+    这样转义膨胀和 counter 不可加性都被算进去，不需要事后重试。
+    """
 
     name = "summary"
 
@@ -40,30 +44,23 @@ class SummaryComponent:
         if not text.strip():
             return empty_component()
 
-        overhead = count_message(ctx.counter, self._wrap(""))
-        budget = max_tokens - overhead
-        rendered = self.renderer.render(text, max(budget, 0))
+        def measure(candidate: str) -> int:
+            return count_message(
+                ctx.counter,
+                self._wrap(escape_context_tags(candidate)),
+            )
 
-        for _ in range(3):
-            if not rendered.text:
-                return RenderedComponent(truncated=rendered.truncated)
+        rendered = self.renderer.render(text, max_tokens, measure=measure)
+        if not rendered.text:
+            return RenderedComponent(truncated=rendered.truncated)
 
-            message = self._wrap(rendered.text)
-            actual = count_message(ctx.counter, message)
-            if actual <= max_tokens:
-                return RenderedComponent(
-                    messages=(message,),
-                    tokens=actual,
-                    truncated=rendered.truncated,
-                )
-
-            budget -= actual - max_tokens
-            if budget < 0:
-                break
-            rendered = self.renderer.render(text, budget)
-
-        return RenderedComponent(truncated=True)
+        message = self._wrap(escape_context_tags(rendered.text))
+        return RenderedComponent(
+            messages=(message,),
+            tokens=count_message(ctx.counter, message),
+            truncated=rendered.truncated,
+        )
 
     @staticmethod
     def _wrap(text: str) -> dict:
-        return summary_message(escape_context_tags(text))
+        return summary_message(text)

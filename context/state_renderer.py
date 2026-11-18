@@ -4,13 +4,16 @@
 
 - 不输出 ``STATE_HEADER``，``<state>`` 标签由组件添加；
 - 按 section 整体取舍，丢弃时记录 section 名；
-- 不做 critical tier，超预算就截断而不是失败。
+- 不做 critical tier，超预算就截断而不是失败；
+- 可用 ``measure`` 把候选文本映射成“最终消息成本”，把转义膨胀和
+  counter 不可加性都算进去，组件因此不需要重试。
 """
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import Callable
 
 from core.tokens import TokenCounter, estimate_tokens
 from state.models import Goal, SessionState
@@ -24,10 +27,15 @@ SECTION_ORDER = (
     ("facts", "事实"),
 )
 
+Measure = Callable[[str], int]
+
 
 @dataclass(frozen=True)
 class RenderedState:
-    """状态渲染结果。"""
+    """状态渲染结果。
+
+    ``tokens`` 是文本本身的计数；含包装的真实成本由组件用 ``measure`` 重算。
+    """
 
     text: str = ""
     tokens: int = 0
@@ -52,13 +60,21 @@ class StateRenderer:
             )
         )
 
-    def render(self, state: SessionState, max_tokens: int) -> RenderedState:
+    def render(
+        self,
+        state: SessionState,
+        max_tokens: int,
+        *,
+        measure: Measure | None = None,
+    ) -> RenderedState:
         if not isinstance(state, SessionState):
             raise TypeError("state 必须是 SessionState")
         if isinstance(max_tokens, bool) or not isinstance(max_tokens, int):
             raise TypeError("max_tokens 必须是整数")
         if max_tokens < 0:
             raise ValueError("max_tokens 不能为负数")
+        if measure is not None and not callable(measure):
+            raise TypeError("measure 必须可调用")
 
         sections = self._sections(state)
         if not sections:
@@ -69,7 +85,7 @@ class StateRenderer:
 
         for index, (name, label, body) in enumerate(sections):
             candidate = lines + [label] + body
-            if self._count(candidate) <= max_tokens:
+            if self._fits(candidate, max_tokens, measure):
                 lines = candidate
                 continue
 
@@ -94,6 +110,16 @@ class StateRenderer:
             truncated=bool(dropped),
             dropped_sections=tuple(dropped),
         )
+
+    def _fits(
+        self,
+        lines: list[str],
+        max_tokens: int,
+        measure: Measure | None,
+    ) -> bool:
+        text = "\n".join(lines)
+        cost = measure(text) if measure is not None else self._count_text(text)
+        return cost <= max_tokens
 
     def _sections(
         self,
@@ -142,9 +168,6 @@ class StateRenderer:
     @staticmethod
     def _one_line(text: str) -> str:
         return " ".join(str(text).splitlines()).strip()
-
-    def _count(self, lines: list[str]) -> int:
-        return self._count_text("\n".join(lines))
 
     def _count_text(self, text: str) -> int:
         return self.counter(text or "")

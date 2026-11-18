@@ -9,14 +9,18 @@ from context.components.base import (
     state_message,
 )
 from context.models import RenderedComponent
-from context.state_renderer import RenderedState, StateRenderer
+from context.state_renderer import StateRenderer
 from core.tokens import count_message
 
 _UNLIMITED = 10**9
 
 
 class StateComponent:
-    """空 state 直接省略；放不下时按 section 截断并报告。"""
+    """空 state 直接省略；放不下时按 section 截断并报告。
+
+    截断在原文上进行；``measure`` 负责把候选文本映射成最终消息成本，
+    这样转义膨胀和 counter 不可加性都被算进去，不需要事后重试。
+    """
 
     name = "state"
 
@@ -40,37 +44,27 @@ class StateComponent:
         if self.renderer.is_empty(state):
             return empty_component()
 
-        overhead = count_message(ctx.counter, self._wrap(""))
-        budget = max_tokens - overhead
-        rendered = self.renderer.render(state, max(budget, 0))
+        def measure(candidate: str) -> int:
+            return count_message(
+                ctx.counter,
+                self._wrap(escape_context_tags(candidate)),
+            )
 
-        for _ in range(3):
-            if not rendered.text:
-                return RenderedComponent(
-                    truncated=rendered.truncated,
-                    dropped=rendered.dropped_sections,
-                )
+        rendered = self.renderer.render(state, max_tokens, measure=measure)
+        if not rendered.text:
+            return RenderedComponent(
+                truncated=rendered.truncated,
+                dropped=rendered.dropped_sections,
+            )
 
-            message = self._wrap(rendered.text)
-            actual = count_message(ctx.counter, message)
-            if actual <= max_tokens:
-                return RenderedComponent(
-                    messages=(message,),
-                    tokens=actual,
-                    truncated=rendered.truncated,
-                    dropped=rendered.dropped_sections,
-                )
-
-            budget -= actual - max_tokens
-            if budget < 0:
-                break
-            rendered = self.renderer.render(state, budget)
-
+        message = self._wrap(escape_context_tags(rendered.text))
         return RenderedComponent(
-            truncated=True,
+            messages=(message,),
+            tokens=count_message(ctx.counter, message),
+            truncated=rendered.truncated,
             dropped=rendered.dropped_sections,
         )
 
     @staticmethod
     def _wrap(text: str) -> dict:
-        return state_message(escape_context_tags(text))
+        return state_message(text)
