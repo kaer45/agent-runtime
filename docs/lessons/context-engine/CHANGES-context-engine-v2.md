@@ -44,7 +44,7 @@
 | C2 | 2026-11-17 | 口径修正 | 预算算术错误：`4K+4K+8K+4K+8K+80K+512` 实际是 **108,512**，文档写成 108.5K / 108,500，等于把 512 取整成 0.5K。改为精确值，否则文档与 `to_display()` 输出对不上。 | §3.2、§3.3、§8.3 | §3.1、§3.7、§3.10、§11.2 | `ContextLimits.configured_capacity`、预算表展示、`tools_ceiling=0` 时的 100,512 | 已实现 |
 | C3 | 2026-11-17 | 口径修正 | 消息计数下沉到 `core/tokens.py`，`TokenBudget` 只做委托。原因：`HistoryStore` 写入 `token_count` 也要用同一口径，但 history 不能反向 import context。算法与数值完全不变。 | §5.2（指标口径不变） | §3.2 措辞：改为“与 `TokenBudget.count_messages` 同源实现” | `core/tokens.py`、`context/budget.py`、`history/turn_store.py` | 已实现 |
 | C4 | 2026-11-18 | 设计缺口 | `to_display()` 要打印 `Model Window` / `Reserved for Output` / `Safety`，但 `ContextReport` 只有 `available_tokens` 和 `configured_capacity`，无法反推这三项。给 report 增加 `limits` 字段（只读引用，不参与账目）。 | §8（字段清单位于 protocol，strategy 无需改） | §3.7 字段表新增 `limits: ContextLimits` | `ContextReport`、`to_display`、`to_log`（日志不含 limits） | 已实现 |
-| C5 | 2026-11-18 | 设计缺口 | 工具预算裁剪遇到“分数更高但放不下”的候选时，文档只写“直到放不下”，未说明停止还是跳过。实现为**跳过并继续尝试更小的候选**：工具没有连续性要求，不该被一个超大 schema 卡住；历史仍保持“遇到第一个放不下就停”，因为要连续后缀。 | §7.1（选择规则待补一句） | §4.7（选择规则待补一句） | `ToolSelector`、Q1 的“停止/跳过”子问题 | 提议（等确认后定稿） |
+| C5 | 2026-11-18 | 设计缺口 | 工具预算裁剪遇到“分数更高但放不下”的候选时，文档只写“直到放不下”，未说明停止还是跳过。实现为**跳过并继续尝试更小的候选**：工具没有连续性要求，不该被一个超大 schema 卡住；历史仍保持“遇到第一个放不下就停”，因为要连续后缀。 | §7.1 选择规则第 3 条已补 | §4.7 选择规则第 3 条已补 | `ToolSelector`；Q1 的“停止/跳过”子问题关闭 | 已定稿 |
 
 类型取值：`设计缺口` / `需求变更` / `口径修正` / `删除项`。
 状态取值：`提议` / `已定稿` / `已实现`。
@@ -55,7 +55,7 @@
 
 | 编号 | 问题 | 涉及位置 | 状态 |
 |---|---|---|---|
-| Q1 | optional 全为 0 分时是否显式写“按 registry 顺序全收”；预算放不下时是停止还是跳过 | strategy §7.1 / protocol §4.7 | 待定 |
+| Q1 | optional 全为 0 分时，是否显式写“按 registry 顺序全部入选” | strategy §7.1 / protocol §4.7 | 待定（C5 已关闭“停止/跳过”部分） |
 | Q2 | `TokenBudget.fit` / `BudgetResult` / `BudgetExceededError` 的删除点，以及 `TokenBudget` 保留为薄计数器还是整体退役。连带 `context/__init__.py` 导出、`turn_orchestrator` 的异常捕获、两个 lesson script | strategy §9、§10.10；protocol §3.1 | 待 M3b 决定 |
 
 ## 5. 冻结前修订（已并入基线）

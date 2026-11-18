@@ -477,11 +477,14 @@ v3 embedding / 语义检索
 ```text
 1. required 先放
 2. optional 按 score 降序，同分按 registry 顺序
-3. 从高到低取，直到 max_tools / tools_ceiling 放不下
+3. 从高到低取；放不下的 optional 跳过，继续尝试后面的候选
 4. score=0 的工具，预算还有空间时仍然可以入选
 5. required 放不下 -> TOOLS_REQUIRED_MISSING
 6. 被预算/max_tools 丢弃的 optional -> dropped_names
 ```
+
+工具是“跳过继续”，history 是“遇到第一个放不下就停”：history 必须保持连续
+后缀，工具没有连续性要求，不能被一个超大 schema 卡死整轮。
 
 打分只用于排序，不作为排除条件。预算和 max_tools 都足够时，所有 allowed
 tools 都会进入上下文；预算/max_tools 不够时才从分数最低的工具开始丢。
