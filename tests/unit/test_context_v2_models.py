@@ -92,6 +92,7 @@ def make_usage(**overrides) -> ComponentUsage:
 def make_report(**overrides) -> ContextReport:
     values = {
         "components": {"system": make_usage()},
+        "limits": ContextLimits(),
         "message_tokens": 10,
         "tool_tokens": 0,
         "total_tokens": 10,

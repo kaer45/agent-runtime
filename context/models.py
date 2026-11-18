@@ -268,6 +268,7 @@ class ContextReport:
     """
 
     components: dict[str, ComponentUsage]
+    limits: ContextLimits
 
     message_tokens: int
     tool_tokens: int
@@ -299,6 +300,9 @@ class ContextReport:
                 "ContextReport.components 必须是 dict[str, ComponentUsage]"
             )
 
+        if not isinstance(self.limits, ContextLimits):
+            raise TypeError("ContextReport.limits 必须是 ContextLimits")
+
         issues = self.issues
         if isinstance(issues, list):
             issues = tuple(issues)
@@ -323,6 +327,26 @@ class ContextReport:
             raise TypeError(
                 "ContextReport.tool_selection 必须是 ToolSelection 或 None"
             )
+
+    # 格式化方法放在 report_format，避免模型模块反向依赖展示逻辑。
+
+    def to_log(self) -> dict:
+        """给日志的 JSON 可序列化 dict。"""
+        from context.report_format import to_log
+
+        return to_log(self)
+
+    def format(self) -> tuple["DisplaySection", ...]:
+        """给 UI 的结构化区块。"""
+        from context.report_format import format_sections
+
+        return format_sections(self)
+
+    def to_display(self) -> str:
+        """终端表格文本。"""
+        from context.report_format import to_display
+
+        return to_display(self)
 
 
 @dataclass(frozen=True)
