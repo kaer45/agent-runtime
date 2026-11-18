@@ -85,6 +85,13 @@
 | 标签 | 指向 | 完成内容 |
 |---|---|---|
 | `context-engine-m1a` | `6fc5d31` | 数据模型、统一 Issue、`history/metrics.py`、`StateSnapshot` 移位；367 tests green |
+| `context-engine-m1b` | `84d0a91` | turn 级 `HistoryStore`（schema fail-fast、`append_turn_once`、`load`、`save_summary_cas`、`archive_covered`、`clear`）、turn 结构校验、计数口径下沉 `core/tokens`；419 tests green |
 | `context-engine-m2` | `78fd7c9` | `ContextEngine.assemble`、六个组件、`ToolSelector`、`select_recent_turns`、报告格式化、measure 截断、thin slice；509 tests green |
+
+已完成、待打标签：
+
+| 里程碑 | 提交 | 完成内容 |
+|---|---|---|
+| M3a | `c421424` | `LLMResponse` / `chat_with_meta`、`SummaryError`、`HistorySummarizer` 双档位重试与 `fit_turns` 精确前缀、C7 档位 `(2000, 4000, 8000)`；532 tests green |
 
 每个里程碑完成时：单元测试全绿 → 回填第 3 节状态 → 打标签。
