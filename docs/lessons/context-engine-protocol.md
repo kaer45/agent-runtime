@@ -1330,9 +1330,9 @@ async def chat_with_meta(
 ### 8.2 重试档位
 
 ```text
-local_max_tokens = [2024, 4096, 8192]
+local_max_tokens = [2000, 4000, 8000]
 model_max_tokens = int(local_max_tokens * 0.7)
-default local    = 2024
+default local    = 2000
 ```
 
 每次尝试记录：
