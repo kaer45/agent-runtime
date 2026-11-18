@@ -84,5 +84,6 @@
 | 标签 | 指向 | 完成内容 |
 |---|---|---|
 | `context-engine-m1a` | `6fc5d31` | 数据模型、统一 Issue、`history/metrics.py`、`StateSnapshot` 移位；367 tests green |
+| `context-engine-m2` | `78fd7c9` | `ContextEngine.assemble`、六个组件、`ToolSelector`、`select_recent_turns`、报告格式化、measure 截断、thin slice；509 tests green |
 
 每个里程碑完成时：单元测试全绿 → 回填第 3 节状态 → 打标签。
