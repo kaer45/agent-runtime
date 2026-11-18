@@ -758,7 +758,8 @@ v3: embedding / 语义检索
 1. required 先按输入顺序放
 2. optional 按 score 降序，同分按输入顺序
 3. 从高到低取；放不下的 optional 跳过，继续尝试后面的候选
-4. score=0 的工具，预算还有空间时仍然可以入选
+4. score=0 的工具，预算还有空间时仍然可以入选；所有 optional 都是 0 分时，
+   按 registry 顺序依次收下
 5. required 放不下 -> TOOLS_REQUIRED_MISSING
 6. 被预算/max_tools 丢弃的 optional -> dropped_names
 ```
