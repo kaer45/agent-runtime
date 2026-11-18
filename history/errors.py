@@ -29,3 +29,7 @@ class HistoryFloorUnmet(HistoryStoreError):
 
 class HistoryHardCapExceeded(HistoryStoreError):
     """硬上限维护后主表仍 >= ``hard_limit``。"""
+
+
+class SummaryError(RuntimeError):
+    """摘要生成失败：调用异常、空摘要、超窗或档位用尽。"""
