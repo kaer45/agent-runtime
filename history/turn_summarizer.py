@@ -23,7 +23,7 @@ from history.turns import RollingSummary, TurnRecord
 logger = logging.getLogger(__name__)
 
 # 本地档位；model 档位是它的 0.7 倍。
-LOCAL_TOKEN_LADDER = (2024, 4096, 8192)
+LOCAL_TOKEN_LADDER = (2000, 4000, 8000)
 MODEL_TOKEN_RATIO = 0.7
 
 MAX_ATTEMPTS = 3
@@ -87,7 +87,12 @@ class HistorySummarizer:
         turns: Sequence[TurnRecord],
         input_ceiling: int,
     ) -> tuple[TurnRecord, ...]:
-        """最老的连续前缀，保证这次的 prompt 放得进 ``input_ceiling``。"""
+        """最老的连续前缀，保证这次的 prompt 放得进 ``input_ceiling``。
+
+        直接对前缀长度二分，每次都用 ``_prompt_tokens`` 量真实 prompt：
+        token 计数不可加（``estimate_tokens`` 有 ceil 取整），
+        “基线 + 逐轮累加”会算偏，可能多塞一轮或少塞一轮。
+        """
         if not isinstance(previous, RollingSummary):
             raise TypeError("previous 必须是 RollingSummary")
         if isinstance(input_ceiling, bool) or not isinstance(input_ceiling, int):
@@ -101,17 +106,16 @@ class HistorySummarizer:
         if not turns:
             return ()
 
-        used = self._prompt_tokens(previous, ())
-        selected: list[TurnRecord] = []
+        # prompt token 数随前缀长度单调不减，二分成立。
+        low, high = 0, len(turns)
+        while low < high:
+            middle = (low + high + 1) // 2
+            if self._prompt_tokens(previous, turns[:middle]) <= input_ceiling:
+                low = middle
+            else:
+                high = middle - 1
 
-        for turn in turns:
-            cost = self._count_text(self._render_turns((turn,))) + 1
-            if used + cost > input_ceiling:
-                break
-            selected.append(turn)
-            used += cost
-
-        return tuple(selected)
+        return turns[:low]
 
     # ------------------------------------------------------------------ 生成
 
