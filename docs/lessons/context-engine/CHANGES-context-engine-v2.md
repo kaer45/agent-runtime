@@ -47,6 +47,7 @@
 | C5 | 2026-11-18 | 设计缺口 | 工具预算裁剪遇到“分数更高但放不下”的候选时，文档只写“直到放不下”，未说明停止还是跳过。实现为**跳过并继续尝试更小的候选**：工具没有连续性要求，不该被一个超大 schema 卡住；历史仍保持“遇到第一个放不下就停”，因为要连续后缀。 | §7.1 选择规则第 3 条已补 | §4.7 选择规则第 3 条已补 | `ToolSelector`；Q1 的“停止/跳过”子问题关闭 | 已定稿 |
 | C6 | 2026-11-18 | 口径修正 | Q1：文档只用规则 2 + 规则 4 隐含“全 0 分仍全部入选”，实现者可能把打分当过滤，导致所有 optional 都 0 分时一个工具都不暴露。补一句明文，把推导变成规则。 | §7.1 选择规则第 4 条 | §4.7 选择规则第 4 条 | `ToolSelector` 行为不变，已有测试覆盖 | 已定稿 |
 | C7 | 2026-11-18 | 需求变更 | 摘要档位改成整数档：local `(2024, 4096, 8192)` → `(2000, 4000, 8000)`，model 相应 `int(x*0.7)` → `(1400, 2800, 5600)`。取整更易核对，且最高档 8000 与 `reserve_output` 同值。 | §5.7 档位表 | §8.2 档位表 | `history/turn_summarizer.py`；`input_ceiling = available - 5600` | 已实现 |
+| C8 | 2026-11-18 | 删除项 | Q2 关闭：`TokenBudget` 整体退役，不留薄壳。strategy §9 把它列在“保留/修改”，但 C3 之后它只剩三个委托方法，计数唯一入口已是 `core/tokens.py`；保留会诱导新代码继续走旧入口。另：`history/turn_store.py`、`turn_summarizer.py`、`turns.py` 三个新模块名与尚未删除的旧实现同名，改名必须排在删除之后；删除又依赖 orchestrator 不再 import legacy，故 M3b 只保留“不碰旧代码”的两步，orchestrator 重写、删旧、改名合并为 M3c。 | §9 保留清单移除 `TokenBudget`；§10 顺序不变（8 压缩 → 9 编排 → 10 删旧），改名追加在 10 之后 | §3.1 两处 `TokenBudget.count_message(s)` 改为 `core.tokens` 口径；§3.2 `token_count` 措辞同步 | 删 `context/{budget,messages,builder,planner,renderer,prompts}.py`、`history/{store,summarizer,models}.py`；删 6 个旧测试 + 7 个旧脚本 + `test_token_budget_is_the_shared_message_counter`；保留并改写 `scripts/real_llm_state_e2e.py`；`turn_orchestrator` 改捕 `ContextError`；3 处 `git mv` | 已定稿 |
 
 类型取值：`设计缺口` / `需求变更` / `口径修正` / `删除项`。
 状态取值：`提议` / `已定稿` / `已实现`。
@@ -58,7 +59,10 @@
 | 编号 | 问题 | 涉及位置 | 状态 |
 |---|---|---|---|
 | Q1 | optional 全为 0 分时，是否显式写“按 registry 顺序全部入选” | strategy §7.1 / protocol §4.7 | 已关闭（见 C6） |
-| Q2 | `TokenBudget.fit` / `BudgetResult` / `BudgetExceededError` 的删除点，以及 `TokenBudget` 保留为薄计数器还是整体退役。连带 `context/__init__.py` 导出、`turn_orchestrator` 的异常捕获、两个 lesson script | strategy §9、§10.10；protocol §3.1 | 待 M3b 决定 |
+| Q2 | `TokenBudget.fit` / `BudgetResult` / `BudgetExceededError` 的删除点，以及 `TokenBudget` 保留为薄计数器还是整体退役。连带 `context/__init__.py` 导出、`turn_orchestrator` 的异常捕获、两个 lesson script | strategy §9、§10.10；protocol §3.1 | 已关闭（见 C8，整体退役） |
+| Q3 | 执行失败 / 超时的 tool 消息是否需要稳定错误码（如 `TOOL_TIMEOUT` / `TOOL_EXECUTION_FAILED`）。protocol §4.9 只规定了四个校验错误码，当前 middleware 对执行失败透传 runner 的 `error` 字符串，不新增码。 | protocol §4.9 | 待定（M4 AgentLoop 消费 tool 消息前决定） |
+| Q4 | middleware 批量异常隔离：`agent/tool_middleware.py` 的 `execute` 用默认 `asyncio.gather`，任一 `_run_one` 抛异常（自定义 validator 抛错、工具结果循环引用导致 `json.dumps` 抛 `ValueError`、深层 JSON 触发 `RecursionError`）会让整批立即失败，且已启动的兄弟调用不会被取消、继续执行，结果被丢弃（幽灵执行，已实测）。修法方向：每个调用加 `Exception` 守卫并合成失败消息，保留默认 gather 以传播取消；不要用 `return_exceptions=True`（会把异常对象塞进消息列表，且要单独处理 `CancelledError`）。 | protocol §4.9 | 待修（M4 AgentLoop 前） |
+| Q5 | `_parse_calls` 是批级硬失败：`execute` 在执行前一次性解析全部调用，一个缺 `id` / `function` 的调用抛 `ValueError`，整批工具都不执行（已实测：有效调用 `runner.calls == []`）。修法方向：能识别的坏调用（有 `id`）降级成 `INVALID_ARGUMENTS` 消息，只有缺 `id`、无法回填 `tool_call_id` 时才中止本轮；后者需要新增错误码或明确“整轮作废”，与 Q3 一起定。 | protocol §4.9 | 待定（M4 前） |
 
 ## 5. 冻结前修订（已并入基线）
 
@@ -78,7 +82,19 @@
 | M1b | 元数据表 + `HistoryStore`（`append_turn_once` / `load` / CAS / 归档） | `context-engine-m1b` |
 | M2 | `ContextEngine` + 组件 + `ToolSelector` + 报告与展示 + thin slice | `context-engine-m2` |
 | M3a | `LLMResponse` / `chat_with_meta` / `HistorySummarizer` | `context-engine-m3a` |
-| M3b | `HistoryCompactor` + `TurnOrchestrator` + middleware + 删旧实现 | `context-engine-m3b` |
+| M3b-1 | `HistoryCompactor` + 单测（真 store、假 summarizer），不碰旧代码 | — |
+| M3b-2 | 执行侧 middleware（registry → exposed → whitelist → schema、失败 tool 消息）+ 单测 | `context-engine-m3b` |
+| M3c-0 | `TurnOrchestrator` 设计讨论，结论回填 protocol 与本文件 | — |
+| M3c-1 | `TurnOrchestrator` 重写 + `agent/runtime.py` 重配 | — |
+| M3c-2 | 删旧实现、旧测试、旧脚本（C8 清单） | — |
+| M3c-3 | 改名：`turn_store.py`→`store.py`、`turn_summarizer.py`→`summarizer.py`、`turns.py`→`models.py`，单独提交 | `context-engine-m3c` |
+| M3d | 集成测试 + 故障注入 | 待定 |
+
+依赖关系：删除（M3c-2）依赖 orchestrator 不再 import legacy（M3c-1）；改名（M3c-3）
+依赖旧文件已删除，否则目标文件名被占用。因此两者都排在 M3c 尾部。
+改名中只有 `turn_summarizer.py`→`summarizer.py` 是文档要求（strategy §5.7 写明
+`SUMMARY_INPUT_CEILING` 放 `history/summarizer.py`，M3a 为避开旧模块临时改了名），
+另两处是为消除命名漂移，行为零变化。
 
 已打标签：
 
@@ -87,5 +103,6 @@
 | `context-engine-m1a` | `6fc5d31` | 数据模型、统一 Issue、`history/metrics.py`、`StateSnapshot` 移位；367 tests green |
 | `context-engine-m1b` | `84d0a91` | turn 级 `HistoryStore`（schema fail-fast、`append_turn_once`、`load`、`save_summary_cas`、`archive_covered`、`clear`）、turn 结构校验、计数口径下沉 `core/tokens`；419 tests green |
 | `context-engine-m2` | `78fd7c9` | `ContextEngine.assemble`、六个组件、`ToolSelector`、`select_recent_turns`、报告格式化、measure 截断、thin slice；509 tests green |
+| `context-engine-m3a` | `c421424` | `LLMResponse` / `chat_with_meta`、`SummaryError`、`HistorySummarizer` 双档位重试与 `fit_turns` 精确前缀、C7 档位 `(2000, 4000, 8000)`；532 tests green |
 
 每个里程碑完成时：单元测试全绿 → 回填第 3 节状态 → 打标签。

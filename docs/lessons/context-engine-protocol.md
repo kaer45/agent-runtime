@@ -865,7 +865,7 @@ def assemble(self, request: ContextRequest) -> ContextResult: ...
 1. 校验 request
 2. 校验 latest user，最多 user_ceiling；超限抛 USER_INPUT_TOO_LONG
 3. metrics = analyze(request.history.turns, limits.history_ceiling)
-4. decision = decide(metrics)
+4. decision = decide(metrics, limits.history_ceiling)
 5. decision == FLOOR_UNMET：抛 HISTORY_FLOOR_UNMET
 6. decision == OVER_TARGET：追加 HISTORY_OVER_TARGET WARNING issue
 7. 渲染 system
@@ -1159,7 +1159,7 @@ async def after_turn(self, session_id: str) -> CompactionResult: ...
 1. 取 per-session lock
 2. snapshot = store.load(session_id)
 3. metrics = analyze(snapshot.turns, limits.history_ceiling)
-4. decision = decide(metrics)
+4. decision = decide(metrics, limits.history_ceiling)
 5. FLOOR_UNMET:
        log warning
        不压缩
