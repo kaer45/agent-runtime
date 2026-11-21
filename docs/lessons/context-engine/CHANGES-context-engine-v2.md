@@ -91,7 +91,10 @@
 | M3c-1 | `TurnOrchestrator` 重写 + `agent/runtime.py` 重配 | — |
 | M3c-2 | 删旧实现、旧测试、旧脚本（C8 清单） | — |
 | M3c-3 | 改名：`turn_store.py`→`store.py`、`turn_summarizer.py`→`summarizer.py`、`turns.py`→`models.py`，单独提交 | `context-engine-m3c` |
-| M3d | 集成测试 + 故障注入 | 待定 |
+| M3d | 集成测试 + 故障注入 + 真实模型 e2e（默认跳过） | `context-engine-m3d` |
+
+真实模型 e2e 在 `tests/e2e/`，默认 skip；设置 `LLM_API_KEY` / `LLM_BASE_URL`
+后运行 `pytest tests/e2e -q`，约 10–12 次真实调用。
 
 依赖关系：删除（M3c-2）依赖 orchestrator 不再 import legacy（M3c-1）；改名（M3c-3）
 依赖旧文件已删除，否则目标文件名被占用。因此两者都排在 M3c 尾部。
@@ -108,5 +111,6 @@
 | `context-engine-m2` | `78fd7c9` | `ContextEngine.assemble`、六个组件、`ToolSelector`、`select_recent_turns`、报告格式化、measure 截断、thin slice；509 tests green |
 | `context-engine-m3a` | `c421424` | `LLMResponse` / `chat_with_meta`、`SummaryError`、`HistorySummarizer` 双档位重试与 `fit_turns` 精确前缀、C7 档位 `(2000, 4000, 8000)`；532 tests green |
 | `context-engine-m3b` | `13862a2` | `HistoryCompactor`（触发顺序、per-session lock、CAS、软/硬归档、硬上限）、`ToolMiddleware`（registry→exposed→白名单→schema 四层校验、四个错误码、按序回填）、C8、Q3–Q5；581 tests green |
+| `context-engine-m3c` | `8404ac4` | `TurnOrchestrator` v2 接线（engine / compactor / 硬上限闸门 / C9 事件契约）、删 legacy 模块与旧测试脚本、`history/{store,summarizer,models}.py` 归位；489 tests green |
 
 每个里程碑完成时：单元测试全绿 → 回填第 3 节状态 → 打标签。
