@@ -112,5 +112,6 @@
 | `context-engine-m3a` | `c421424` | `LLMResponse` / `chat_with_meta`、`SummaryError`、`HistorySummarizer` 双档位重试与 `fit_turns` 精确前缀、C7 档位 `(2000, 4000, 8000)`；532 tests green |
 | `context-engine-m3b` | `13862a2` | `HistoryCompactor`（触发顺序、per-session lock、CAS、软/硬归档、硬上限）、`ToolMiddleware`（registry→exposed→白名单→schema 四层校验、四个错误码、按序回填）、C8、Q3–Q5；581 tests green |
 | `context-engine-m3c` | `8404ac4` | `TurnOrchestrator` v2 接线（engine / compactor / 硬上限闸门 / C9 事件契约）、删 legacy 模块与旧测试脚本、`history/{store,summarizer,models}.py` 归位；489 tests green |
+| `context-engine-m3d` | `314ccd6` | 13 个集成/故障注入测试（真 SQLite + 真 engine/store/compactor）、2 个真实模型 e2e（默认 skip）；502 tests green，真实 e2e 2 passed |
 
 每个里程碑完成时：单元测试全绿 → 回填第 3 节状态 → 打标签。
