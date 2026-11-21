@@ -1,6 +1,5 @@
 import pytest
 
-from context.budget import MESSAGE_OVERHEAD, TokenBudget
 from context.errors import ContextError
 from context.models import (
     ComponentUsage,
@@ -207,12 +206,3 @@ def test_display_row_coerces_level():
     row = DisplayRow(cells=("a",), level="warning")
 
     assert row.level is IssueLevel.WARNING
-
-
-def test_token_budget_is_the_shared_message_counter():
-    budget = TokenBudget(max_tokens=248_000, counter=len)
-    message = {"role": "user", "content": "abc"}
-
-    assert budget.count_text("abc") == 3
-    assert budget.count_message(message) == MESSAGE_OVERHEAD + 3
-    assert budget.count_messages([message, message]) == 2 * (MESSAGE_OVERHEAD + 3)

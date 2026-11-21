@@ -165,7 +165,7 @@ configured_capacity       = sum(all ceilings) + safety_tokens
 - `configured_capacity <= available_tokens`，否则启动抛 `BUDGET_INFEASIBLE`；
 - 组件之间不借预算，`grant = ceiling`。
 
-所有 message 组件的 ceiling 都按 `TokenBudget.count_message` 计算，包含
+所有 message 组件的 ceiling 都按 `core.tokens.count_message` 计算，包含
 消息开销，不是纯 content token；`tools_ceiling` 按 schema 文本
 `count_text` 计算。history 的 `token_count` 也使用同一口径，否则
 `last6_tokens` 和 `history_rendered_tokens` 会对不上。
@@ -188,8 +188,8 @@ class TurnRecord:
 约束：
 
 - `seq >= 1`；
-- `token_count > 0`，由消息计数口径计算：`TokenBudget.count_messages` 与
-  `core.tokens.count_messages` 是同一份实现，历史层不反向依赖 `context`；
+- `token_count > 0`，由 `core.tokens.count_messages` 计算，历史层不反向依赖
+  `context`；
 - `token_count` 必须用和 engine / compactor 相同的 counter 计算；
   更换 tokenizer 时要重算历史 turn，不能混用旧计数；
 - `messages` 非空且已通过 turn 校验；
@@ -321,6 +321,17 @@ last6_tokens             = 最近 6 个完整 turn 的 token_count 之和
 
 `history_utilization` 不 clamp 到 1.0；大于 1.0 表示未覆盖历史已经超过
 `history_ceiling`。`HISTORY_FLOOR_UNMET` 仍只看 `last6_tokens`。
+
+消费方（C9）：`TurnOrchestrator` 每轮把 `report.to_log()` 放进
+`RUN_FINISHED.data["context"]`，压缩结果放进 `data["compaction"]`：
+
+```text
+decision / compacted / covered_through_seq / active_turns
+issues: [{code, level, message}]
+```
+
+装配失败时不放 `context`，改为 `error_code` + `level`（仅 `ContextError`），
+`error` 仍保留人类可读文本。事件类型不新增，`FINAL_ANSWER` 在收尾之前发出。
 
 ### 3.8 ContextIssue
 

@@ -1,7 +1,13 @@
-"""一轮对话的编排层：加载快照、组装上下文、生成回答、写回状态与历史。
+"""一轮对话的编排层：读快照、装配上下文、生成回答、写回状态与历史。
 
-本模块只负责“编排”，不实现 token 计算、消息渲染或状态 delta 提取；
-这些分别由 ``ContextPlanner`` / ``ContextBuilder`` / ``StateExtractor`` 完成。
+职责边界（只做顺序、失败策略和事件）：
+
+- 预算、消息布局、历史渲染由 ``ContextEngine`` 负责；
+- 摘要、CAS、归档由 ``HistoryCompactor`` 负责；
+- 状态增量由 ``TurnStateUpdater`` / ``StateService`` 负责。
+
+本模块不做 token 计算、不渲染消息、不生成摘要。执行模式（TOOL / PLAN）
+属于后续阶段，本期聊天路径只有一次模型调用、不带工具。
 """
 
 from __future__ import annotations
@@ -12,20 +18,22 @@ import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
-from agent.chat_responder import ChatResponder
-from context.budget import BudgetExceededError
-from context.builder import BuiltContext, ContextBuilder
-from history.store import (
-    HistorySnapshot,
-    HistoryStore,
-    HistoryStoreError,
-    TrimPlan,
-)
-from context.planner import ContextPlan, ContextPlanner
-from history.summarizer import HistorySummarizer, SummaryError
+from agent.llm import LLM
+from context.engine import ContextEngine
+from context.errors import ContextError
+from context.models import ContextRequest, ContextResult
+from core.issues import ContextIssueCode
 from events.models import EventType, RuntimeEvent
+from history.compactor import CompactionResult, HistoryCompactor
+from history.errors import (
+    HistoryFloorUnmet,
+    HistoryHardCapExceeded,
+    HistoryStoreError,
+)
+from history.store import HARD_ARCHIVE_LIMIT, HistoryStore
+from history.models import HistorySnapshot
+from state.models import StateSnapshot
 from state.service import StateService
-from state.store import StateSnapshot
 from state.updater import StateUpdateResult, TurnStateUpdater
 
 logger = logging.getLogger(__name__)
@@ -48,7 +56,7 @@ class TurnFinishResult:
     state_update: StateUpdateResult | None
     state_error: str | None
     appended: bool
-    trimmed: bool
+    compaction: CompactionResult | None
     warnings: tuple[str, ...]
 
     @property
@@ -57,28 +65,26 @@ class TurnFinishResult:
 
 
 class TurnOrchestrator:
-    """把聊天路径的“读上下文 → 生成 → 写回”串起来。"""
+    """把聊天路径的“读上下文 → 装配 → 生成 → 写回”串起来。"""
 
     def __init__(
         self,
         *,
         state_service: StateService,
-        history_store: HistoryStore,
-        planner: ContextPlanner,
-        builder: ContextBuilder,
-        summarizer: HistorySummarizer,
+        store: HistoryStore,
+        engine: ContextEngine,
+        compactor: HistoryCompactor,
         updater: TurnStateUpdater,
-        chat_responder: ChatResponder,
-        keep_last: int | None = None,
+        llm: LLM,
     ):
         self.state_service = state_service
-        self.history_store = history_store
-        self.planner = planner
-        self.builder = builder
-        self.summarizer = summarizer
+        self.store = store
+        self.engine = engine
+        self.compactor = compactor
         self.updater = updater
-        self.chat_responder = chat_responder
-        self.keep_last = keep_last
+        self.llm = llm
+
+    # ------------------------------------------------------------------ 开始
 
     async def begin_turn(
         self,
@@ -86,7 +92,7 @@ class TurnOrchestrator:
         *,
         turn_id: str | None = None,
     ) -> TurnContext:
-        """等待上一轮更新，然后一次性加载状态和历史。"""
+        """硬上限闸门 → 等待上一轮更新 → 一次性加载状态和历史。"""
         session_id = self._normalize_id(session_id, "session_id")
         turn_id = (
             self._normalize_id(turn_id, "turn_id")
@@ -94,18 +100,40 @@ class TurnOrchestrator:
             else str(uuid.uuid4())
         )
 
+        count = await asyncio.to_thread(self.store.count_turns, session_id)
+        if count >= HARD_ARCHIVE_LIMIT:
+            await self._ensure_hard_cap(session_id)
+
         await self.updater.wait(session_id)
         state = await self.state_service.get(session_id)
-        history = await asyncio.to_thread(
-            self.history_store.load,
-            session_id,
-        )
+        history = await asyncio.to_thread(self.store.load, session_id)
         return TurnContext(
             session_id=session_id,
             turn_id=turn_id,
             state=state,
             history=history,
         )
+
+    async def _ensure_hard_cap(self, session_id: str) -> None:
+        """硬上限维护失败时映射成 ``ContextError``，阻塞本轮。"""
+        try:
+            await self.compactor.ensure_hard_cap(session_id)
+        except HistoryFloorUnmet as exc:
+            raise ContextError.from_code(
+                ContextIssueCode.HISTORY_FLOOR_UNMET,
+                f"最近 6 轮已超过 history_ceiling，压缩无法释放空间：{exc}",
+                component="history",
+                details={"reason": str(exc)},
+            ) from exc
+        except HistoryHardCapExceeded as exc:
+            raise ContextError.from_code(
+                ContextIssueCode.HISTORY_HARD_CAP_EXCEEDED,
+                f"历史硬上限维护失败：{exc}",
+                component="history",
+                details={"reason": str(exc)},
+            ) from exc
+
+    # ------------------------------------------------------------------ 执行
 
     async def run_chat(
         self,
@@ -114,7 +142,7 @@ class TurnOrchestrator:
         *,
         run_id: str | None = None,
     ) -> AsyncIterator[RuntimeEvent]:
-        """执行聊天回合，并在回答后完成状态/历史收尾。"""
+        """装配一次上下文、调用一次模型，然后收尾。"""
         if not isinstance(user_input, str):
             raise TypeError("user_input 必须是 str")
 
@@ -126,30 +154,29 @@ class TurnOrchestrator:
         )
 
         try:
-            built, prepare_warnings = await self._prepare_context(
-                context,
-                user_input,
+            result = self._assemble(context, user_input)
+        except ContextError as exc:
+            logger.warning(
+                "上下文装配失败 turn=%s: %s", context.turn_id, exc
             )
-        except (BudgetExceededError, SummaryError, HistoryStoreError) as exc:
-            logger.warning("上下文准备失败 turn=%s: %s", context.turn_id, exc)
-            yield RuntimeEvent(
-                type=EventType.RUN_FINISHED,
-                run_id=run_id,
-                session_id=context.session_id,
-                data={"error": str(exc), "error_type": type(exc).__name__},
-            )
+            yield self._error_event(run_id, context, exc)
+            return
+        except Exception as exc:  # noqa: BLE001 - 意外错误也要结束本轮
+            logger.exception("上下文装配异常 turn=%s", context.turn_id)
+            yield self._error_event(run_id, context, exc)
             return
 
+        logger.info(
+            "上下文装配完成 turn=%s: %s",
+            context.turn_id,
+            result.report.to_log(),
+        )
+
         try:
-            answer = await self.chat_responder.answer(built.messages)
-        except Exception as exc:
+            answer = await self._answer(result.messages)
+        except Exception as exc:  # noqa: BLE001 - 模型失败结束本轮
             logger.exception("聊天回答失败 turn=%s", context.turn_id)
-            yield RuntimeEvent(
-                type=EventType.RUN_FINISHED,
-                run_id=run_id,
-                session_id=context.session_id,
-                data={"error": str(exc), "error_type": type(exc).__name__},
-            )
+            yield self._error_event(run_id, context, exc)
             return
 
         yield RuntimeEvent(
@@ -159,21 +186,7 @@ class TurnOrchestrator:
             data={"content": answer},
         )
 
-        try:
-            finish = await self.finish_turn(context, user_input, answer)
-        except Exception as exc:
-            # 回答已经发出，收尾异常只记录，不把这一轮判成失败。
-            logger.exception("回合收尾异常 turn=%s", context.turn_id)
-            finish = TurnFinishResult(
-                state_update=None,
-                state_error=None,
-                appended=False,
-                trimmed=False,
-                warnings=(f"回合收尾异常：{exc}",),
-            )
-
-        warnings = list(prepare_warnings)
-        warnings.extend(finish.warnings)
+        finish = await self._safe_finish(context, user_input, answer)
         if finish.state_failed:
             yield RuntimeEvent(
                 type=EventType.STATE_UPDATE_FAILED,
@@ -185,9 +198,12 @@ class TurnOrchestrator:
                 },
             )
 
-        data: dict = {}
-        if warnings:
-            data["warnings"] = warnings
+        data: dict = {"context": result.report.to_log()}
+        if finish.compaction is not None:
+            data["compaction"] = _compaction_data(finish.compaction)
+        if finish.warnings:
+            data["warnings"] = list(finish.warnings)
+
         yield RuntimeEvent(
             type=EventType.RUN_FINISHED,
             run_id=run_id,
@@ -195,13 +211,76 @@ class TurnOrchestrator:
             data=data,
         )
 
+    def _assemble(
+        self,
+        context: TurnContext,
+        user_input: str,
+    ) -> ContextResult:
+        request = ContextRequest(
+            session_id=context.session_id,
+            turn_id=context.turn_id,
+            user_input=user_input,
+            state=context.state,
+            history=context.history,
+            tools=(),
+            required_tools=frozenset(),
+        )
+        return self.engine.assemble(request)
+
+    async def _answer(self, messages: list[dict]) -> str:
+        """单次模型调用；工具循环属于后续执行模式阶段。"""
+        response = await self.llm.chat(messages=list(messages))
+        content = getattr(response, "content", None)
+        return content or ""
+
+    @staticmethod
+    def _error_event(
+        run_id: str,
+        context: TurnContext,
+        exc: Exception,
+    ) -> RuntimeEvent:
+        data: dict = {
+            "error": str(exc),
+            "error_type": type(exc).__name__,
+        }
+        if isinstance(exc, ContextError):
+            data["error_code"] = exc.code.value
+            data["level"] = exc.issue.level.value
+
+        return RuntimeEvent(
+            type=EventType.RUN_FINISHED,
+            run_id=run_id,
+            session_id=context.session_id,
+            data=data,
+        )
+
+    # ------------------------------------------------------------------ 收尾
+
+    async def _safe_finish(
+        self,
+        context: TurnContext,
+        user_input: str,
+        answer: str,
+    ) -> TurnFinishResult:
+        try:
+            return await self.finish_turn(context, user_input, answer)
+        except Exception as exc:  # noqa: BLE001 - 回答已发出，收尾不撤回
+            logger.exception("回合收尾异常 turn=%s", context.turn_id)
+            return TurnFinishResult(
+                state_update=None,
+                state_error=None,
+                appended=False,
+                compaction=None,
+                warnings=(f"回合收尾异常：{exc}",),
+            )
+
     async def finish_turn(
         self,
         context: TurnContext,
         user_input: str,
         answer: str,
     ) -> TurnFinishResult:
-        """更新状态、幂等追加历史，并在超过保留量时裁剪。"""
+        """更新状态、幂等追加本轮 turn，然后交给 compactor 维护历史。"""
         if not isinstance(user_input, str):
             raise TypeError("user_input 必须是 str")
         if not isinstance(answer, str):
@@ -213,25 +292,13 @@ class TurnOrchestrator:
         ]
         warnings: list[str] = []
 
-        state_update: StateUpdateResult | None = None
-        state_error: str | None = None
-        try:
-            state_update = await self.updater.update(
-                context.session_id,
-                context.turn_id,
-                turn_messages,
-            )
-            if state_update.failed:
-                state_error = state_update.error
-                warnings.append(f"状态更新失败：{state_update.error}")
-        except Exception as exc:
-            logger.exception("状态更新异常 turn=%s", context.turn_id)
-            state_error = str(exc)
-            warnings.append(f"状态更新异常：{exc}")
+        state_update, state_error = await self._update_state(
+            context, turn_messages, warnings
+        )
 
         try:
             appended = await asyncio.to_thread(
-                self.history_store.append_once,
+                self.store.append_turn_once,
                 context.session_id,
                 context.turn_id,
                 turn_messages,
@@ -243,155 +310,60 @@ class TurnOrchestrator:
                 state_update=state_update,
                 state_error=state_error,
                 appended=False,
-                trimmed=False,
+                compaction=None,
                 warnings=tuple(warnings),
             )
 
-        trimmed = False
-        try:
-            plan = await asyncio.to_thread(
-                self.history_store.plan_trim,
-                context.session_id,
-                keep_last=self.keep_last,
-            )
-            trimmed = await self._commit_trim(context, plan, warnings)
-        except HistoryStoreError as exc:
-            logger.warning("历史裁剪失败 turn=%s: %s", context.turn_id, exc)
-            warnings.append(f"历史裁剪失败：{exc}")
+        compaction = await self._compact(context.session_id, warnings)
 
         return TurnFinishResult(
             state_update=state_update,
             state_error=state_error,
             appended=appended,
-            trimmed=trimmed,
+            compaction=compaction,
             warnings=tuple(warnings),
         )
 
-    async def _prepare_context(
+    async def _update_state(
         self,
         context: TurnContext,
-        user_input: str,
-    ) -> tuple[BuiltContext, tuple[str, ...]]:
-        """规划预算、处理请求级裁剪，然后组装一次 messages。"""
-        warnings: list[str] = []
-        history = context.history
-
-        plan = self.planner.plan(
-            user_input=user_input,
-            system_prompt=self.builder.system_prompt,
-            summary=history.summary,
-            history=history.messages,
-            message_ids=history.message_ids,
-            budget=self.builder.budget,
-        )
-
-        summary = history.summary
-        uncovered_pairs = self._uncovered_dropped(context, plan)
-        if uncovered_pairs:
-            uncovered_ids = tuple(item[0] for item in uncovered_pairs)
-            uncovered_messages = [item[1] for item in uncovered_pairs]
-            try:
-                summary = await self.summarizer.update(
-                    history.summary,
-                    uncovered_messages,
-                )
-            except SummaryError as exc:
-                logger.warning(
-                    "请求级摘要失败 turn=%s: %s",
-                    context.turn_id,
-                    exc,
-                )
-                warnings.append(f"请求级摘要失败：{exc}")
-            else:
-                try:
-                    await asyncio.to_thread(
-                        self.history_store.save_summary,
-                        context.session_id,
-                        summary,
-                        covered_through_id=max(uncovered_ids),
-                    )
-                except HistoryStoreError as exc:
-                    logger.warning(
-                        "摘要落库失败 turn=%s: %s",
-                        context.turn_id,
-                        exc,
-                    )
-                    warnings.append(f"摘要落库失败：{exc}")
-
-        built = self.builder.build(
-            user_input,
-            state=context.state.state,
-            summary=summary,
-            history=plan.kept_history,
-            state_max_tokens=plan.state_max_tokens,
-        )
-        if built.dropped_messages:
-            logger.warning(
-                "ContextBuilder 兜底丢弃 %d 条历史 turn=%s",
-                len(built.dropped_messages),
-                context.turn_id,
-            )
-            warnings.append(
-                f"ContextBuilder 兜底丢弃 {len(built.dropped_messages)} 条历史"
-            )
-        return built, tuple(warnings)
-
-    async def _commit_trim(
-        self,
-        context: TurnContext,
-        plan: TrimPlan,
+        turn_messages: list[dict],
         warnings: list[str],
-    ) -> bool:
-        if plan.is_empty:
-            return False
-
-        if plan.uncovered_count == 0:
-            await asyncio.to_thread(
-                self.history_store.commit_trim,
-                plan,
-                None,
-            )
-            return True
-
-        current = await asyncio.to_thread(
-            self.history_store.load,
-            context.session_id,
-        )
+    ) -> tuple[StateUpdateResult | None, str | None]:
         try:
-            summary = await self.summarizer.update(
-                current.summary,
-                list(plan.uncovered_messages),
-            )
-        except SummaryError as exc:
-            logger.warning(
-                "存储级摘要失败 turn=%s: %s",
+            result = await self.updater.update(
+                context.session_id,
                 context.turn_id,
-                exc,
+                turn_messages,
             )
-            warnings.append(f"存储级摘要失败：{exc}")
-            return False
+        except Exception as exc:  # noqa: BLE001 - 状态失败不影响回答
+            logger.exception("状态更新异常 turn=%s", context.turn_id)
+            warnings.append(f"状态更新异常：{exc}")
+            return None, str(exc)
 
-        await asyncio.to_thread(
-            self.history_store.commit_trim,
-            plan,
-            summary,
-        )
-        return True
+        if result.failed:
+            warnings.append(f"状态更新失败：{result.error}")
+            return result, result.error
 
-    @staticmethod
-    def _uncovered_dropped(
-        context: TurnContext,
-        plan: ContextPlan,
-    ) -> list[tuple[int, dict]]:
-        covered = context.history.covered_through_id or 0
-        return [
-            (message_id, message)
-            for message_id, message in zip(
-                plan.dropped_message_ids,
-                plan.dropped_history,
-            )
-            if message_id > covered
-        ]
+        return result, None
+
+    async def _compact(
+        self,
+        session_id: str,
+        warnings: list[str],
+    ) -> CompactionResult | None:
+        """压缩失败不阻塞本轮；硬上限错误等下一轮 begin_turn 再试。"""
+        try:
+            return await self.compactor.after_turn(session_id)
+        except (HistoryFloorUnmet, HistoryHardCapExceeded) as exc:
+            logger.warning("历史硬上限 turn: %s", exc)
+            warnings.append(f"历史硬上限：{exc}")
+        except HistoryStoreError as exc:
+            logger.warning("历史压缩失败: %s", exc)
+            warnings.append(f"历史压缩失败：{exc}")
+        return None
+
+    # ------------------------------------------------------------------ 工具
 
     @staticmethod
     def _normalize_id(value: str, name: str) -> str:
@@ -401,3 +373,21 @@ class TurnOrchestrator:
         if not value:
             raise ValueError(f"{name} 不能为空")
         return value
+
+
+def _compaction_data(result: CompactionResult) -> dict:
+    """压缩结果进事件时只放稳定字段，不放内部对象。"""
+    return {
+        "decision": result.decision.value,
+        "compacted": result.compacted,
+        "covered_through_seq": result.covered_through_seq,
+        "active_turns": result.metrics.active_turns,
+        "issues": [
+            {
+                "code": issue.code.value,
+                "level": issue.level.value,
+                "message": issue.message,
+            }
+            for issue in result.issues
+        ],
+    }

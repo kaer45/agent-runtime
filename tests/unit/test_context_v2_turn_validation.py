@@ -1,7 +1,7 @@
 import pytest
 
 from history.errors import HistoryTurnInvalid
-from history.turns import validate_turn_messages
+from history.models import validate_turn_messages
 
 
 def user(text: str = "你好") -> dict:

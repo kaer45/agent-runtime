@@ -4,7 +4,7 @@ from context.engine import ContextEngine
 from context.models import ContextRequest
 from context.tool_selector import ToolSelector
 from core.issues import ContextIssueCode, IssueLevel
-from history.turns import HistorySnapshot, RollingSummary, TurnRecord
+from history.models import HistorySnapshot, RollingSummary, TurnRecord
 from state.models import SessionState, StateSnapshot
 
 TOOL = {

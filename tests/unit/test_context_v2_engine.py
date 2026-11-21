@@ -4,7 +4,7 @@ from context.engine import CONTEXT_NOTE, ContextEngine
 from context.errors import ContextError
 from context.models import ContextLimits, ContextRequest
 from core.issues import ContextIssueCode, IssueLevel
-from history.turns import HistorySnapshot, RollingSummary, TurnRecord
+from history.models import HistorySnapshot, RollingSummary, TurnRecord
 from state.models import SessionState, StateSnapshot
 
 TOOL = {

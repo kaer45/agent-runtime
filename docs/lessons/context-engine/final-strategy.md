@@ -738,7 +738,6 @@ TrimPlan / plan_trim / commit_trim
 保留/修改：
 
 ```text
-TokenBudget
 StateRenderer
 SummaryRenderer
 HistorySummarizer

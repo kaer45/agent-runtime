@@ -47,7 +47,8 @@
 | C5 | 2026-11-18 | 设计缺口 | 工具预算裁剪遇到“分数更高但放不下”的候选时，文档只写“直到放不下”，未说明停止还是跳过。实现为**跳过并继续尝试更小的候选**：工具没有连续性要求，不该被一个超大 schema 卡住；历史仍保持“遇到第一个放不下就停”，因为要连续后缀。 | §7.1 选择规则第 3 条已补 | §4.7 选择规则第 3 条已补 | `ToolSelector`；Q1 的“停止/跳过”子问题关闭 | 已定稿 |
 | C6 | 2026-11-18 | 口径修正 | Q1：文档只用规则 2 + 规则 4 隐含“全 0 分仍全部入选”，实现者可能把打分当过滤，导致所有 optional 都 0 分时一个工具都不暴露。补一句明文，把推导变成规则。 | §7.1 选择规则第 4 条 | §4.7 选择规则第 4 条 | `ToolSelector` 行为不变，已有测试覆盖 | 已定稿 |
 | C7 | 2026-11-18 | 需求变更 | 摘要档位改成整数档：local `(2024, 4096, 8192)` → `(2000, 4000, 8000)`，model 相应 `int(x*0.7)` → `(1400, 2800, 5600)`。取整更易核对，且最高档 8000 与 `reserve_output` 同值。 | §5.7 档位表 | §8.2 档位表 | `history/turn_summarizer.py`；`input_ceiling = available - 5600` | 已实现 |
-| C8 | 2026-11-18 | 删除项 | Q2 关闭：`TokenBudget` 整体退役，不留薄壳。strategy §9 把它列在“保留/修改”，但 C3 之后它只剩三个委托方法，计数唯一入口已是 `core/tokens.py`；保留会诱导新代码继续走旧入口。另：`history/turn_store.py`、`turn_summarizer.py`、`turns.py` 三个新模块名与尚未删除的旧实现同名，改名必须排在删除之后；删除又依赖 orchestrator 不再 import legacy，故 M3b 只保留“不碰旧代码”的两步，orchestrator 重写、删旧、改名合并为 M3c。 | §9 保留清单移除 `TokenBudget`；§10 顺序不变（8 压缩 → 9 编排 → 10 删旧），改名追加在 10 之后 | §3.1 两处 `TokenBudget.count_message(s)` 改为 `core.tokens` 口径；§3.2 `token_count` 措辞同步 | 删 `context/{budget,messages,builder,planner,renderer,prompts}.py`、`history/{store,summarizer,models}.py`；删 6 个旧测试 + 7 个旧脚本 + `test_token_budget_is_the_shared_message_counter`；保留并改写 `scripts/real_llm_state_e2e.py`；`turn_orchestrator` 改捕 `ContextError`；3 处 `git mv` | 已定稿 |
+| C8 | 2026-11-18 | 删除项 | Q2 关闭：`TokenBudget` 整体退役，不留薄壳。strategy §9 把它列在“保留/修改”，但 C3 之后它只剩三个委托方法，计数唯一入口已是 `core/tokens.py`；保留会诱导新代码继续走旧入口。另：`history/turn_store.py`、`turn_summarizer.py`、`turns.py` 三个新模块名与尚未删除的旧实现同名，改名必须排在删除之后；删除又依赖 orchestrator 不再 import legacy，故 M3b 只保留“不碰旧代码”的两步，orchestrator 重写、删旧、改名合并为 M3c。 | §9 保留清单移除 `TokenBudget`；§10 顺序不变（8 压缩 → 9 编排 → 10 删旧），改名追加在 10 之后 | §3.1 两处 `TokenBudget.count_message(s)` 改为 `core.tokens` 口径；§3.2 `token_count` 措辞同步 | 删 `context/{budget,messages,builder,planner,renderer,prompts}.py`、`history/{store,summarizer,models}.py`；删 6 个旧测试 + 7 个旧脚本 + `test_token_budget_is_the_shared_message_counter`；保留并改写 `scripts/real_llm_state_e2e.py`；`turn_orchestrator` 改捕 `ContextError`；3 处 `git mv` | 已实现 |
+| C9 | 2026-11-21 | 设计缺口 | `TurnOrchestrator` 接入 v2 后，每轮的装配报告和压缩结果需要暴露给调用方，但 `RuntimeEvent` 没有字段约定；装配失败若只给 `str(error)`，调用方无法按错误码分支。补事件契约：`RUN_FINISHED.data` 增加 `context`（`ContextReport.to_log()`）、`compaction`（decision / compacted / covered_through_seq / active_turns / issues[code,level,message]）、以及仅在 `ContextError` 时的 `error_code` + `level`；`FINAL_ANSWER` 仍在收尾之前发出；不新增 `EventType`。 | 无（事件属应用层，报告字段清单在 protocol） | §3.7 补“消费方”段：`context` / `compaction` / `error_code` 的落点 | `agent/turn_orchestrator.py`、`agent/runtime.py`、`tests/unit/test_context_v2_orchestrator.py` | 已实现 |
 
 类型取值：`设计缺口` / `需求变更` / `口径修正` / `删除项`。
 状态取值：`提议` / `已定稿` / `已实现`。
@@ -63,6 +64,8 @@
 | Q3 | 执行失败 / 超时的 tool 消息是否需要稳定错误码（如 `TOOL_TIMEOUT` / `TOOL_EXECUTION_FAILED`）。protocol §4.9 只规定了四个校验错误码，当前 middleware 对执行失败透传 runner 的 `error` 字符串，不新增码。 | protocol §4.9 | 待定（M4 AgentLoop 消费 tool 消息前决定） |
 | Q4 | middleware 批量异常隔离：`agent/tool_middleware.py` 的 `execute` 用默认 `asyncio.gather`，任一 `_run_one` 抛异常（自定义 validator 抛错、工具结果循环引用导致 `json.dumps` 抛 `ValueError`、深层 JSON 触发 `RecursionError`）会让整批立即失败，且已启动的兄弟调用不会被取消、继续执行，结果被丢弃（幽灵执行，已实测）。修法方向：每个调用加 `Exception` 守卫并合成失败消息，保留默认 gather 以传播取消；不要用 `return_exceptions=True`（会把异常对象塞进消息列表，且要单独处理 `CancelledError`）。 | protocol §4.9 | 待修（M4 AgentLoop 前） |
 | Q5 | `_parse_calls` 是批级硬失败：`execute` 在执行前一次性解析全部调用，一个缺 `id` / `function` 的调用抛 `ValueError`，整批工具都不执行（已实测：有效调用 `runner.calls == []`）。修法方向：能识别的坏调用（有 `id`）降级成 `INVALID_ARGUMENTS` 消息，只有缺 `id`、无法回填 `tool_call_id` 时才中止本轮；后者需要新增错误码或明确“整轮作废”，与 Q3 一起定。 | protocol §4.9 | 待定（M4 前） |
+| Q6 | 执行模式 v3（E1/E2，独立于本期）：删 `ChatResponder`，由 TOOL 模式吸收；模式选择（TOOL / PLAN）从 `AgentRuntime` 移到 `TurnOrchestrator`，先用“规则 + 模型自选”；PLAN 必须支持并行 DAG；回退只允许在**未执行任何工具**时，执行中途失败转“部分结果 + 询问用户”，补偿留 E2；审批统一放在 `ToolMiddleware`（已确认不区分模式），待定的是同批其他调用在审批等待期间是否继续执行、以及审批状态的事件语义；PLAN 的规划与最终回答也必须走 `ContextEngine`；`submit_task_plan` 这类合成工具如何进入 engine 的 tools 列表待设计。 | 无（v3 新策略文档） | 待规划（M3d 之后） |
+| Q7 | 课程历史文档（`docs/lessons/lesson10/11/17/18/19/20/20_5/20_6.md`）仍引用已删除的 `TokenBudget` / `ContextBuilder` / `ContextPlanner` / `context/renderer` / 旧 `history.*` 模块。这些是课程记录、不是冻结设计文档，C8 的删除清单未包含；后续统一加“代码已退役，见 context-engine v2”提示或重写相关段落。 | `docs/lessons/lesson*.md` | 待处理 |
 
 ## 5. 冻结前修订（已并入基线）
 
@@ -104,5 +107,6 @@
 | `context-engine-m1b` | `84d0a91` | turn 级 `HistoryStore`（schema fail-fast、`append_turn_once`、`load`、`save_summary_cas`、`archive_covered`、`clear`）、turn 结构校验、计数口径下沉 `core/tokens`；419 tests green |
 | `context-engine-m2` | `78fd7c9` | `ContextEngine.assemble`、六个组件、`ToolSelector`、`select_recent_turns`、报告格式化、measure 截断、thin slice；509 tests green |
 | `context-engine-m3a` | `c421424` | `LLMResponse` / `chat_with_meta`、`SummaryError`、`HistorySummarizer` 双档位重试与 `fit_turns` 精确前缀、C7 档位 `(2000, 4000, 8000)`；532 tests green |
+| `context-engine-m3b` | `13862a2` | `HistoryCompactor`（触发顺序、per-session lock、CAS、软/硬归档、硬上限）、`ToolMiddleware`（registry→exposed→白名单→schema 四层校验、四个错误码、按序回填）、C8、Q3–Q5；581 tests green |
 
 每个里程碑完成时：单元测试全绿 → 回填第 3 节状态 → 打标签。

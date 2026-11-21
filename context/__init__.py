@@ -1,22 +1,39 @@
-from core.tokens import estimate_tokens
+"""ContextEngine：上下文装配、预算、报告与工具选择。
 
-from .builder import BuiltContext, ContextBuilder
-from .budget import BudgetExceededError, BudgetResult, TokenBudget
-from .messages import MessageSequenceError, validate_message_sequence
-from .planner import ContextPlan, ContextPlanner
-from .renderer import RenderedState, StateRenderer
+历史与压缩在 ``history`` 包；本包只负责把一次请求装配成 messages / tools。
+"""
+
+from .engine import CONTEXT_NOTE, ContextEngine
+from .errors import ContextError
+from .models import (
+    ComponentUsage,
+    ContextLimits,
+    ContextReport,
+    ContextRequest,
+    ContextResult,
+    DisplayRow,
+    DisplaySection,
+    RenderedComponent,
+    ToolSelection,
+)
+from .state_renderer import StateRenderer
+from .summary_renderer import SummaryRenderer
+from .tool_selector import ToolSelector
 
 __all__ = [
-    "BudgetExceededError",
-    "BudgetResult",
-    "BuiltContext",
-    "ContextBuilder",
-    "ContextPlan",
-    "ContextPlanner",
-    "MessageSequenceError",
-    "RenderedState",
+    "CONTEXT_NOTE",
+    "ComponentUsage",
+    "ContextEngine",
+    "ContextError",
+    "ContextLimits",
+    "ContextReport",
+    "ContextRequest",
+    "ContextResult",
+    "DisplayRow",
+    "DisplaySection",
+    "RenderedComponent",
     "StateRenderer",
-    "TokenBudget",
-    "estimate_tokens",
-    "validate_message_sequence",
+    "SummaryRenderer",
+    "ToolSelection",
+    "ToolSelector",
 ]

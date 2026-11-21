@@ -4,13 +4,13 @@ from types import SimpleNamespace
 import pytest
 
 from history.errors import SummaryError
-from history.turn_summarizer import (
+from history.summarizer import (
     LOCAL_TOKEN_LADDER,
     SUMMARY_INPUT_CEILING,
     HistorySummarizer,
     model_token_ladder,
 )
-from history.turns import RollingSummary, TurnRecord
+from history.models import RollingSummary, TurnRecord
 from core.tokens import estimate_tokens
 
 

@@ -1,7 +1,7 @@
 import pytest
 
 from history.selection import select_recent_turns
-from history.turns import TurnRecord
+from history.models import TurnRecord
 
 
 def make_turn(seq: int, text: str = "ab") -> TurnRecord:

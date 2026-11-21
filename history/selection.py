@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Sequence
 
 from core.tokens import TokenCounter, count_messages
-from history.turns import TurnRecord
+from history.models import TurnRecord
 
 
 @dataclass(frozen=True)

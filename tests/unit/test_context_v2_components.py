@@ -20,7 +20,7 @@ from context.summary_renderer import SummaryRenderer
 from context.tool_selector import ToolSelector
 from core.issues import ContextIssueCode
 from core.tokens import count_message
-from history.turns import HistorySnapshot, RollingSummary, TurnRecord
+from history.models import HistorySnapshot, RollingSummary, TurnRecord
 from state.models import SessionState, StateSnapshot
 
 

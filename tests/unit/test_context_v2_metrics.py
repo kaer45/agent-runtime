@@ -8,7 +8,7 @@ from history.metrics import (
     analyze,
     decide,
 )
-from history.turns import TurnRecord
+from history.models import TurnRecord
 
 CEILING = 80_000
 

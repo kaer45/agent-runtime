@@ -1,6 +1,6 @@
 import pytest
 
-from history.turns import HistorySnapshot, RollingSummary, TurnRecord
+from history.models import HistorySnapshot, RollingSummary, TurnRecord
 
 
 def make_turn(seq: int, tokens: int = 10) -> TurnRecord:

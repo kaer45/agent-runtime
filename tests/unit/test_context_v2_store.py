@@ -4,8 +4,8 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from history.errors import HistoryCoverageConflict, HistoryStoreError
-from history.turn_store import ArchiveResult, HistoryStore, SCHEMA_VERSION
-from history.turns import RollingSummary
+from history.store import ArchiveResult, HistoryStore, SCHEMA_VERSION
+from history.models import RollingSummary
 
 
 def user(text: str = "你好") -> dict:

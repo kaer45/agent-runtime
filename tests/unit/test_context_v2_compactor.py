@@ -15,9 +15,9 @@ from history.errors import (
     SummaryError,
 )
 from history.metrics import CompactionDecision
-from history.turn_store import HistoryStore
-from history.turn_summarizer import HistorySummarizer
-from history.turns import RollingSummary
+from history.store import HistoryStore
+from history.summarizer import HistorySummarizer
+from history.models import RollingSummary
 
 SESSION = "session-1"
 

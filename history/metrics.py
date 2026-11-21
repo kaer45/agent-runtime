@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Sequence
 
-from history.turns import TurnRecord
+from history.models import TurnRecord
 
 # 压缩永远保留的最近完整轮数。
 COMPACTION_FLOOR_TURNS = 6

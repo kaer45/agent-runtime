@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from agent.chat_responder import ChatResponder
 from agent.intent import INTENT_TOOL, Intent, IntentRouter
 from agent.runtime import AgentRuntime
 from events.models import EventType, RuntimeEvent
@@ -148,35 +147,6 @@ def test_router_llm_error_falls_back_to_chat(registry):
     assert decision.source == "fallback"
 
 
-def test_chat_responder_emits_answer():
-    llm = FakeLLM([FakeMessage(content="曹操的儿子有曹昂、曹丕、曹植等。")])
-    responder = ChatResponder(llm, "系统提示")
-
-    events = asyncio.run(collect(responder.run("曹操的儿子叫什么", run_id="run-chat")))
-
-    assert [e.type for e in events] == [
-        EventType.RUN_STARTED,
-        EventType.FINAL_ANSWER,
-        EventType.RUN_FINISHED,
-    ]
-    assert {e.run_id for e in events} == {"run-chat"}
-    assert "曹昂" in events[1].data["content"]
-    assert llm.calls[0]["tools"] is None
-
-
-def test_chat_responder_error_ends_run():
-    llm = FakeLLM([RuntimeError("boom")])
-    responder = ChatResponder(llm, "系统提示")
-
-    events = asyncio.run(collect(responder.run("你好", run_id="run-chat")))
-
-    assert [e.type for e in events] == [
-        EventType.RUN_STARTED,
-        EventType.RUN_FINISHED,
-    ]
-    assert "boom" in events[-1].data["error"]
-
-
 def test_runtime_routes_chat(runtime_db):
     llm = FakeLLM([
         FakeMessage(tool_calls=[classify("chat")]),
@@ -227,9 +197,7 @@ def test_runtime_routes_task(runtime_db):
     llm = FakeLLM([FakeMessage(tool_calls=[classify("task")])])
     runtime = AgentRuntime(llm=llm, db_path=runtime_db)
     task_runner = FakeRunner("任务回答")
-    chat_runner = FakeRunner("聊天回答")
     runtime.task_runner = task_runner
-    runtime.chat_responder = chat_runner
 
     events = asyncio.run(collect(runtime.run("今天成都适合酿酒吗")))
 
@@ -243,7 +211,6 @@ def test_runtime_routes_task(runtime_db):
     assert events[0].data["source"] == "llm"
     assert events[2].data["content"] == "任务回答"
     assert task_runner.calls == ["今天成都适合酿酒吗"]
-    assert chat_runner.calls == []
     assert len({e.run_id for e in events}) == 1
     assert len(llm.calls) == 1
 

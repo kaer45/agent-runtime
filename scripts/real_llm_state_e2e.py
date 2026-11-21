@@ -1,14 +1,21 @@
-"""真实 LLM 的端到端冒烟：多轮对话 + 状态提取 + 上下文组装。
+"""真实 LLM 的端到端冒烟：多轮对话 + 状态提取 + 上下文装配。
 
-默认直接使用 StateService 应用 delta；等第 19 课的 TurnStateUpdater
-实现后，可以加 --updater 走后台更新/幂等路径。
+走完整 v2 链路：
+
+    TurnOrchestrator.begin_turn
+      → ContextEngine.assemble
+      → LLM
+      → TurnStateUpdater（状态 delta）
+      → HistoryStore.append_turn_once
+      → HistoryCompactor.after_turn（摘要 / 归档）
+
+数据库是临时 SQLite 文件，默认跑完删除。
 
 用法：
     .venv\\Scripts\\python.exe -m scripts.real_llm_state_e2e
 
 可选：
     --session real-e2e
-    --updater
     --keep-db
     --turns 3
 """
@@ -23,13 +30,18 @@ from pathlib import Path
 
 from agent.llm import LLM
 from agent.runtime import CHAT_SYSTEM_PROMPT
-from context.budget import TokenBudget
-from context.builder import ContextBuilder
+from agent.turn_orchestrator import TurnOrchestrator
+from context.engine import ContextEngine
+from context.models import ContextLimits
+from events.models import EventType
+from history.compactor import HistoryCompactor
+from history.store import HistoryStore
+from history.summarizer import HistorySummarizer
 from state.extractor import StateExtractor
-from state.service import StateService
 from state.registry import SessionStateRegistry
+from state.service import StateService
 from state.store import StateStore
-
+from state.updater import TurnStateUpdater
 
 TURNS = [
     "我喜欢干型酒，预算 800 元，想买两瓶波尔多产区的酒。",
@@ -40,136 +52,113 @@ TURNS = [
 
 async def main() -> None:
     args = _parse_args()
-
-    missing = [
-        name
-        for name in ("LLM_API_KEY", "LLM_BASE_URL")
-        if not os.getenv(name)
-    ]
-    if missing:
-        raise SystemExit(
-            "缺少环境变量："
-            + ", ".join(missing)
-            + "。请先在 .env 中配置 LLM_API_KEY / LLM_BASE_URL。"
-        )
+    _require_env()
 
     db_path = _make_db_path()
-    store = StateStore(db_path)
-    store.initialize()
 
     llm = LLM()
-    service = StateService(SessionStateRegistry(store))
-    extractor = StateExtractor(llm)
-    builder = ContextBuilder(
-        system_prompt=CHAT_SYSTEM_PROMPT,
-        budget=TokenBudget(max_tokens=2000, reserve_output=400),
-        state_max_tokens=600,
+    state_store = StateStore(db_path)
+    state_store.initialize()
+    history_store = HistoryStore(db_path)
+    history_store.initialize()
+
+    service = StateService(SessionStateRegistry(state_store))
+    limits = ContextLimits()
+    engine = ContextEngine(system_prompt=CHAT_SYSTEM_PROMPT, limits=limits)
+    summarizer = HistorySummarizer(
+        llm, available_tokens=limits.available_tokens
+    )
+    compactor = HistoryCompactor(
+        store=history_store,
+        summarizer=summarizer,
+        limits=limits,
+    )
+    updater = TurnStateUpdater(StateExtractor(llm), service)
+    orchestrator = TurnOrchestrator(
+        state_service=service,
+        store=history_store,
+        engine=engine,
+        compactor=compactor,
+        updater=updater,
+        llm=llm,
     )
 
-    updater = None
-    if args.updater:
-        try:
-            from state.updater import TurnStateUpdater
-        except ImportError as exc:
-            raise SystemExit(
-                "state/updater.py 尚未实现，去掉 --updater 可先走直接应用模式。"
-            ) from exc
-        updater = TurnStateUpdater(extractor, service)
-
-    history: list[dict] = []
-    session_id = args.session
-
-    print(f"model: {llm.model}")
-    print(f"session: {session_id}")
+    print(f"model: {getattr(llm, 'model', 'unknown')}")
+    print(f"session: {args.session}")
     print(f"db: {db_path}")
+    print(
+        f"limits: window={limits.window_tokens:,}"
+        f" reserve={limits.reserve_output:,}"
+        f" history={limits.history_ceiling:,}"
+        f" capacity={limits.configured_capacity:,}"
+    )
     print("=" * 70)
 
     try:
         for index, user_input in enumerate(TURNS[: args.turns], start=1):
             print(f"\n[turn {index}] user: {user_input}")
 
-            snapshot = await service.get(session_id)
-            built = builder.build(
-                user_input,
-                state=snapshot.state,
-                history=history,
+            context = await orchestrator.begin_turn(
+                args.session, turn_id=f"turn-{index}"
             )
 
-            print(
-                "context:"
-                f" state_tokens={built.state_tokens}"
-                f" summary_tokens={built.summary_tokens}"
-                f" original={built.original_tokens}"
-                f" final={built.final_tokens}"
-                f" dropped={built.dropped_indices}"
-            )
+            answer = ""
+            report = None
+            compaction = None
+            warnings: list[str] = []
+            error = None
+            error_code = None
 
-            response = await llm.chat(
-                messages=built.messages,
-                temperature=0.3,
-            )
-            answer = response.content or ""
+            async for event in orchestrator.run_chat(context, user_input):
+                if event.type is EventType.FINAL_ANSWER:
+                    answer = event.data.get("content", "")
+                elif event.type is EventType.RUN_FINISHED:
+                    error = event.data.get("error")
+                    error_code = event.data.get("error_code")
+                    report = event.data.get("context")
+                    compaction = event.data.get("compaction")
+                    warnings = list(event.data.get("warnings") or ())
+
+            if error is not None:
+                print(f"[turn {index}] failed ({error_code or 'error'}): {error}")
+                break
+
             print(f"[turn {index}] assistant: {answer}")
 
-            turn_messages = [
-                {"role": "user", "content": user_input},
-                {"role": "assistant", "content": answer},
-            ]
-
-            if updater is not None:
-                result = await updater.update(
-                    session_id,
-                    f"turn-{index}",
-                    turn_messages,
-                    expected_version=snapshot.version,
+            if report is not None:
+                print(
+                    "context:"
+                    f" total={report['total_tokens']}"
+                    f" window={report['window_utilization']:.1%}"
+                    f" history={report['history_tokens']}"
+                    f" active_turns={report['active_turns']}"
+                    f" capacity={report['configured_capacity']:,}"
                 )
-                if result.failed:
-                    raise RuntimeError(f"状态更新失败: {result.error}")
-                if result.snapshot is None:
-                    raise RuntimeError("状态更新没有返回 snapshot")
 
-                # updater 自己负责提取，这里只打印它真正应用的 delta。
-                # 不要再单独调用 extractor，否则会多调一次 LLM，
-                # 第二次提取结果可能和第一次不同。
-                delta = result.delta
-                updated = result.snapshot
-                print("[turn] delta (from updater):")
-                print(delta.model_dump_json(indent=2))
-                if not result.applied:
-                    print("[turn] no state change")
-            else:
-                delta = await extractor.extract(snapshot.state, turn_messages)
-                print("[turn] delta:")
-                print(delta.model_dump_json(indent=2))
+            if compaction is not None:
+                print(
+                    "compaction:"
+                    f" decision={compaction['decision']}"
+                    f" compacted={compaction['compacted']}"
+                    f" covered={compaction['covered_through_seq']}"
+                )
 
-                if delta.is_empty():
-                    print("[turn] no state change")
-                    updated = snapshot
-                else:
-                    updated = await service.apply(
-                        session_id,
-                        delta,
-                        expected_version=snapshot.version,
-                    )
+            for warning in warnings:
+                print(f"[warning] {warning}")
 
-            print(
-                f"[turn {index}] state version:"
-                f" {snapshot.version} -> {updated.version}"
-            )
-            print(updated.state.model_dump_json(indent=2))
-
-            history.extend(turn_messages)
+            snapshot = await service.get(args.session)
+            print(f"[turn {index}] state version: {snapshot.version}")
+            print(snapshot.state.model_dump_json(indent=2))
             print("=" * 70)
 
-        if updater is not None:
-            await updater.drain()
-
-        final = await service.get(session_id)
+        final = await service.get(args.session)
         print("\n[final]")
         print(f"version: {final.version}")
         print(final.state.model_dump_json(indent=2))
+        print(f"turns: {history_store.count_turns(args.session)}")
 
     finally:
+        await updater.drain()
         if args.keep_db:
             print(f"\n保留数据库：{db_path}")
         else:
@@ -178,14 +167,9 @@ async def main() -> None:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="真实 LLM 的多轮上下文/状态端到端冒烟"
+        description="真实 LLM 的多轮上下文/状态端到端冒烟（v2 链路）"
     )
     parser.add_argument("--session", default="real-e2e")
-    parser.add_argument(
-        "--updater",
-        action="store_true",
-        help="使用第 19 课的 TurnStateUpdater（需要先实现 state/updater.py）",
-    )
     parser.add_argument(
         "--keep-db",
         action="store_true",
@@ -198,6 +182,20 @@ def _parse_args() -> argparse.Namespace:
         help=f"运行前几轮，默认 {len(TURNS)}",
     )
     return parser.parse_args()
+
+
+def _require_env() -> None:
+    missing = [
+        name
+        for name in ("LLM_API_KEY", "LLM_BASE_URL")
+        if not os.getenv(name)
+    ]
+    if missing:
+        raise SystemExit(
+            "缺少环境变量："
+            + ", ".join(missing)
+            + "。请先在 .env 中配置 LLM_API_KEY / LLM_BASE_URL。"
+        )
 
 
 def _make_db_path() -> Path:

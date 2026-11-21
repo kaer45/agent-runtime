@@ -9,7 +9,7 @@ from __future__ import annotations
 from context.engine import ContextEngine
 from context.models import ContextRequest
 from history.metrics import CompactionDecision
-from history.turn_store import HistoryStore
+from history.store import HistoryStore
 from state.models import SessionState, StateSnapshot
 
 

@@ -18,7 +18,7 @@ from typing import Literal, get_args
 
 from context.errors import ContextError
 from core.issues import ContextIssue, ContextIssueCode, IssueLevel
-from history.turns import HistorySnapshot
+from history.models import HistorySnapshot
 from state.models import StateSnapshot
 
 ToolSelectionReason = Literal[
